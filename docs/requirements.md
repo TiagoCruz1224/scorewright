@@ -52,7 +52,9 @@ One person can have different roles in different projects. There is no organisat
 - Create, rename, archive a project; invite an existing user by email; change or remove a member's role.
 
 **Datasets (TASK-030, 031)**
-- Import test cases from CSV or JSON (documented schema with `input`, optional `reference`, `tags`, `metadata`).
+- Import test cases from CSV or JSON (documented schema with optional `id`, `input`, optional `reference`, `tags`,
+  `metadata`). `id` is the case key that runs refer to; it must be unique in the file and is generated (row number)
+  when absent.
 - Validation before anything is stored: encoding UTF-8, required fields, field lengths, maximum file size and row count
   (initial limits: 5 MB, 5,000 rows; configurable). The whole import is rejected with line-level errors if any row is
   invalid. Nothing partial is saved.
@@ -69,8 +71,11 @@ One person can have different roles in different projects. There is no organisat
 - Automatic deterministic criteria: exact match with the reference, contains/does-not-contain text, regular expression,
   length limits, valid JSON. They run as background jobs and can be re-run.
 - Manual scoring screen: one answer at a time, keyboard friendly, shows input, reference and answer, saves each score
-  immediately, optional comment. Blind mode hides the run label to reduce bias.
+  immediately, optional comment per answer (independent of the scores). "Next answer" means the next one that still has
+  missing scores; there is no locking between evaluators in the MVP. Blind mode hides the run label to reduce bias.
 - Progress per evaluation (scored / total).
+- The owner can delete an evaluation (with its scores); datasets, runs and rubrics that no evaluation uses can then be
+  deleted. An archived project is read-only and hidden from the project list; the owner can restore it.
 
 **Results (TASK-034, 035)**
 - Dashboard per evaluation: average and distribution per criterion and per run; breakdown by tag.

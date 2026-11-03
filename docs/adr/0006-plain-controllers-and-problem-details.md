@@ -11,7 +11,10 @@ enough for the import-errors screen.
 ## Decision
 
 - Write plain Symfony controllers. Request bodies map to DTOs with `#[MapRequestPayload]` and are validated with Symfony
-  Validator; unknown fields are rejected.
+  Validator.
+- Unknown fields are rejected: `#[MapRequestPayload]` ignores them by default, so the serializer's default context sets
+  `allow_extra_attributes: false` (`framework.serializer.default_context`). A test checks that an unknown field
+  answers `422`.
 - Responses come from explicit serializer groups or response DTOs.
 - All errors use `application/problem+json` (RFC 9457) with a stable `code` and, for validation and import errors, an
   `errors` array (see the architecture doc, §5).

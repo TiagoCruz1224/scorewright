@@ -13,10 +13,12 @@ import on the same screen.
 - The request parses and validates the whole file **in memory** first:
   - a UTF-8 check;
   - CSV with a header row, or JSON with a depth limit;
-  - required fields and lengths;
-  - duplicate and unknown case ids for runs.
+  - required fields and the field limits in the architecture doc (§4);
+  - the optional case `id`: unique in the file, otherwise generated from the row or item number;
+  - duplicate and unknown case keys for runs.
 - Only if there are no errors, all rows are inserted in **one transaction**, with batched inserts.
-- Errors are collected up to 100 and counted in full, then returned as Problem Details (`422 import_rejected`).
+- Errors are listed up to 100. The total, the number of affected lines and the count per error code always cover the
+  whole file. They are returned as Problem Details (`422 import_rejected`).
 - The raw file is discarded after parsing. Only the SHA-256 and the original file name are kept on the dataset version.
 
 ## Consequences

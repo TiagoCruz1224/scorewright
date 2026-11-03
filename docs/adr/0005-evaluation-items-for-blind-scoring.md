@@ -14,9 +14,12 @@ Answer ids would not reveal the run on their own, but a predictable order or an 
   - a **random v4 UUID**;
   - a `position` that groups items by case;
   - in blind mode, runs **shuffled within each case**.
-- Scoring endpoints address items only (`…/items/{itemId}/scores/{criterionId}`).
-- In blind mode, item responses omit the run id, label and letter.
+- Scoring endpoints address items only (`…/items/{itemId}/scores/{criterionId}`, `…/items/{itemId}/comment`).
+- In blind mode, item responses omit the run id, label and letter. Run endpoints return metadata only, never answers.
 - Scores reference the item, with a unique (`evaluation_item_id`, `criterion_id`) index, so a save is an upsert.
+- The comment is one per item (answer), stored on the item, independent of the scores.
+- "Next" is per evaluation, not per evaluator. There is no locking between evaluators in the MVP: for each criterion
+  the last save wins.
 
 ## Consequences
 
