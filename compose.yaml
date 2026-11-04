@@ -19,7 +19,8 @@ services:
       db:
         condition: service_healthy
     ports:
-      - ${APP_PORT:-8471}:80
+      # Bound to the loopback interface only: the dev stack uses placeholder secrets.
+      - 127.0.0.1:${APP_PORT:-8471}:80
     healthcheck:
       test: ["CMD", "php", "-r", "exit(@file_get_contents('http://localhost/api/health') === false ? 1 : 0);"]
       start_period: 5m
@@ -65,7 +66,7 @@ services:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
     ports:
-      - ${FRONTEND_PORT:-5471}:5173
+      - 127.0.0.1:${FRONTEND_PORT:-5471}:5173
 
 volumes:
   backend_vendor:

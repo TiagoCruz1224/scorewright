@@ -33,7 +33,8 @@ Services: `app` (FrankenPHP serving Symfony), `worker` (the same image, consumin
 
 The host ports are deliberately uncommon (8471 and 5471), so they rarely collide with other local stacks. To change
 them (`APP_PORT`, `FRONTEND_PORT`) or the local passwords, copy `.env.example` to `.env` and edit it; `.env` is ignored
-by Git. The database port is not published.
+by Git. Both ports are bound to `127.0.0.1` only, so the stack is not reachable from the local network; the database
+port is not published at all.
 
 ### Where the files live
 
