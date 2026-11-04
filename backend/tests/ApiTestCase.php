@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tests;
 
+use App\Projects\Entity\Project;
+use App\Projects\Entity\ProjectMember;
+use App\Projects\Entity\ProjectRole;
+use App\Users\Entity\User;
+use Doctrine\ORM\EntityManagerInterface;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -64,6 +69,34 @@ abstract class ApiTestCase extends WebTestCase
     {
         self::assertSame(201, self::register($client, $email)->getStatusCode());
         self::assertSame(200, self::login($client, $email)->getStatusCode());
+    }
+
+    /**
+     * A project with an owner, an evaluator and a viewer, plus a user who is not a member. Created directly in the
+     * database; tests sign these users in with $client->loginUser().
+     *
+     * @return array{project: Project, owner: User, evaluator: User, viewer: User, non-member: User}
+     */
+    protected static function createProjectWithMembers(string $name = 'Project'): array
+    {
+        $entityManager = self::getContainer()->get('doctrine.orm.entity_manager');
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+
+        $project = new Project($name);
+        $entityManager->persist($project);
+        $users = [];
+        foreach (['owner' => ProjectRole::Owner, 'evaluator' => ProjectRole::Evaluator, 'viewer' => ProjectRole::Viewer, 'non-member' => null] as $actor => $role) {
+            $user = new User($actor.'-'.bin2hex(random_bytes(4)).'@example.com', ucfirst($actor));
+            $user->setPasswordHash('unused: signed in with loginUser()');
+            $entityManager->persist($user);
+            if (null !== $role) {
+                $entityManager->persist(new ProjectMember($project, $user, $role));
+            }
+            $users[$actor] = $user;
+        }
+        $entityManager->flush();
+
+        return ['project' => $project, 'owner' => $users['owner'], 'evaluator' => $users['evaluator'], 'viewer' => $users['viewer'], 'non-member' => $users['non-member']];
     }
 
     protected static function assertProblem(Response $response, int $status, string $code): void

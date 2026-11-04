@@ -12,7 +12,11 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 - **CSRF:** every `POST`, `PUT`, `PATCH` and `DELETE` under `/api` needs a `csrf-token` header with a random value of
   at least 24 characters (the SPA generates one per page load). A request without it, or whose `Origin`, `Referer` or
   `Sec-Fetch-Site` header shows another site, answers `403 csrf_failed`. Login and register are covered too.
-- **Request bodies** are validated; unknown fields are rejected.
+- **Request bodies** and query strings are validated; unknown fields are rejected.
+- **Lists** take `?page=` (from 1) and `?perPage=` (default 25, at most 100) and answer
+  `{ "items": [...], "page": 1, "perPage": 25, "total": 42 }`.
+- **Projects:** every project resource lives under `/api/projects/{projectId}`. If you are not a member of that
+  project, or it does not exist, the answer is `404 not_found` (the same for both), before any other check.
 - **Errors** are `application/problem+json` ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)) with a stable `code`:
 
 ```json
@@ -31,11 +35,12 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 |---|---|
 | 400 | `malformed_request` (invalid JSON, or login without a JSON body) |
 | 401 | `unauthenticated` (not signed in), `invalid_credentials` (login) |
-| 403 | `forbidden`, `csrf_failed` |
-| 404 | `not_found` |
+| 403 | `forbidden` (a member without the needed role), `csrf_failed` |
+| 404 | `not_found` (also: a project you are not a member of) |
 | 405 | `method_not_allowed` |
-| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `unknown_field` or `email_taken` |
-| 429 | `too_many_login_attempts` |
+| 409 | `project_archived` (any write to an archived project except restore), `last_owner` |
+| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `unknown_field`, `email_taken`, `no_account` or `already_member` |
+| 429 | `too_many_login_attempts`, `too_many_registrations`, `too_many_invites` |
 | 500 | `internal_error` (details are only in the server log) |
 | 503 | `database_unavailable` (health check) |
 
@@ -56,6 +61,8 @@ Public. Creates an account; it does not sign in.
 - `email`: valid address, at most 254 characters, stored lower-case, unique (`email_taken` otherwise, whatever the case).
 - `password`: 12 to 128 characters, no composition rules.
 - `displayName`: 1 to 100 characters (blank is rejected).
+- At most 10 registrations per hour from one client IP (`429 too_many_registrations`), because `email_taken` reveals
+  that an account exists.
 
 `201` with the user:
 
@@ -79,3 +86,41 @@ Public. Ends the session; `204` (also when nobody was signed in).
 ### `GET /api/me`
 
 Signed in. `200` with the current user (same shape as above); `401 unauthenticated` otherwise.
+
+## Projects
+
+Roles per project: **owner**, **evaluator**, **viewer**. Members can read the project; only owners change it or
+manage its members. An archived project is read-only (`409 project_archived` on every write except restore) and is
+left out of the project list.
+
+A project:
+
+```json
+{ "id": "01a1a812-9f7d-78b6-8bcf-f3273e397f53", "name": "Support bot", "description": "", "archivedAt": null, "role": "owner" }
+```
+
+`role` is the caller's role in the project. `archivedAt` is the archive time, or `null`.
+
+| Endpoint | Who | Answer |
+|---|---|---|
+| `GET /api/projects` | signed in | `200`, a list of the caller's projects ordered by name. Active ones only; `?archived=true` lists only the archived ones. |
+| `POST /api/projects` | signed in | `201` with the project; the caller becomes its owner. Body `{"name": "…", "description": "…"}`: name 1 to 200 characters, description optional, up to 2,000. |
+| `GET /api/projects/{projectId}` | member | `200` with the project. |
+| `PATCH /api/projects/{projectId}` | owner | `200` with the project. Body with `name` and/or `description`; fields that are left out do not change. |
+| `POST /api/projects/{projectId}/archive` | owner | `200` with the project (`archivedAt` set). |
+| `POST /api/projects/{projectId}/restore` | owner | `200` with the project (`archivedAt` is `null`); also when it was not archived. |
+
+## Members
+
+Owners only. A member:
+
+```json
+{ "userId": "01a1a803-d231-7613-8d09-90acccd35cc6", "email": "ana@example.com", "displayName": "Ana", "role": "evaluator" }
+```
+
+| Endpoint | Answer |
+|---|---|
+| `GET /api/projects/{projectId}/members` | `200`, a list of members ordered by display name. |
+| `POST /api/projects/{projectId}/members` | `201` with the member. Body `{"email": "…", "role": "owner\|evaluator\|viewer"}`. Only users who already have an account can be added (`422` with `no_account` otherwise; `already_member` if they are in the project). At most 20 invites per hour per project and owner, failed ones included (`429 too_many_invites`). |
+| `PATCH /api/projects/{projectId}/members/{userId}` | `200` with the member. Body `{"role": "…"}`. `409 last_owner` if this would leave the project without an owner; `404` if the user is not a member. |
+| `DELETE /api/projects/{projectId}/members/{userId}` | `204`. An owner can remove themselves when another owner exists; `409 last_owner` otherwise. |

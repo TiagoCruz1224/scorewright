@@ -363,9 +363,12 @@ Every error is `application/problem+json` (RFC 9457) with a stable machine-reada
   `/api/auth/login`; logout invalidates the session.
 - The cookie is `HttpOnly`, `Secure`, `SameSite=Lax`. Sessions are stored in PostgreSQL (`PdoSessionHandler`), so a
   container restart does not sign everyone out.
-- **CSRF:** unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`) must pass Symfony's stateless CSRF check (Origin/Referer
-  against the app origin) and the double-submit `csrf-token` header (`check_header: true`), applied to the whole
-  `/api` firewall. ([symfony.com](https://symfony.com/doc/7.4/security/csrf.html))
+- **CSRF:** unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`) under `/api` need the `csrf-token` header (a random
+  value of at least 24 characters), checked by Symfony's stateless CSRF token manager in its header variant
+  (`check_header: true`, no double-submit cookie). It also rejects the request when `Origin`, `Referer` or
+  `Sec-Fetch-Site` shows another site. Together with the `SameSite=Lax` cookie this is the protection; see
+  [ADR 0002](adr/0002-session-cookie-authentication.md). A request listener applies it before the firewall, so
+  login and register are covered. ([symfony.com](https://symfony.com/doc/7.4/security/csrf.html))
 - Passwords use the framework's `auto` hasher. The minimum length is 12 characters, there is no maximum below 128, and
   there are no composition rules. There is no external breached-password lookup, because that would be a third-party
   call.
@@ -440,9 +443,14 @@ OWASP ASVS level 1 is the reference. The concrete rules for this project:
 - **Access control:** deny by default, membership resolved before anything else, 404 for other projects, an
   authorization test for every endpoint and evaluation state (§6, §8).
 - **Authentication and sessions:** §6. The session id is regenerated on login, and sessions expire after 8 h idle.
-- **Account enumeration:** inviting an email without an account necessarily tells the owner that the account does not
-  exist (invites only add existing users). This is accepted for the MVP. Invites are rate-limited per project and
-  user (20 per hour), and only owners see member emails.
+- **Account enumeration:** two endpoints necessarily tell the caller whether an account exists. Both are accepted for
+  the MVP, and both are rate-limited:
+  - **inviting** an email without an account answers `no_account` (invites only add existing users). Invites are
+    limited per project and owner (20 per hour, `429 too_many_invites`), and only owners see member emails;
+  - **registering** an email that is already used answers `email_taken`. Registration is open and sends no email, so
+    there is no way to hide this. Registrations are limited per client IP (10 per hour, `429 too_many_registrations`).
+  - Both limits are set in `config/packages/framework.yaml` (`rate_limiter`).
+  - Login answers the same `invalid_credentials` for an unknown email and a wrong password.
 - **Input:**
   - DTO validation at the API boundary, unknown fields rejected.
   - Upload limits are checked in PHP and in the app (5 MB, 5,000 rows by default, configurable), plus the field limits in §4.

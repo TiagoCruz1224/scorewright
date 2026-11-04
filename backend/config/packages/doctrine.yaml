@@ -19,6 +19,11 @@ doctrine:
                 is_bundle: false
                 dir: '%kernel.project_dir%/src/Users/Entity'
                 prefix: 'App\Users\Entity'
+            Projects:
+                type: attribute
+                is_bundle: false
+                dir: '%kernel.project_dir%/src/Projects/Entity'
+                prefix: 'App\Projects\Entity'
 
 when@test:
     doctrine:

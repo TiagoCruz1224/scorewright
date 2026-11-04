@@ -12,9 +12,11 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
+use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Event\LogoutEvent;
@@ -25,12 +27,18 @@ final class AuthController
         private readonly UserRepository $users,
         private readonly EntityManagerInterface $entityManager,
         private readonly UserPasswordHasherInterface $passwordHasher,
+        private readonly RateLimiterFactoryInterface $registrationLimiter,
     ) {
     }
 
     #[Route('/api/auth/register', name: 'auth_register', methods: ['POST'])]
-    public function register(#[MapRequestPayload] RegisterRequest $request): JsonResponse
+    public function register(Request $httpRequest, #[MapRequestPayload] RegisterRequest $request): JsonResponse
     {
+        // email_taken reveals that an account exists (§9): limit attempts per client IP.
+        if (!$this->registrationLimiter->create($httpRequest->getClientIp())->consume()->isAccepted()) {
+            throw new ApiProblem(429, 'too_many_registrations', 'Too many registrations from this address: try again later');
+        }
+
         if (null !== $this->users->loadUserByIdentifier($request->email)) {
             throw self::emailTaken();
         }

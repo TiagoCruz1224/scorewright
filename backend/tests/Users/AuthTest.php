@@ -69,6 +69,16 @@ final class AuthTest extends ApiTestCase
         self::assertSame(201, self::register($client, 'eva@example.com', str_repeat('a', 128))->getStatusCode());
     }
 
+    public function testRegistrationsAreLimitedTo10PerHourForAnAddress(): void
+    {
+        $client = self::createApiClient();
+        for ($registration = 1; $registration <= 10; ++$registration) {
+            self::assertSame(201, self::register($client, "user$registration@example.com")->getStatusCode());
+        }
+
+        self::assertProblem(self::register($client, 'user11@example.com'), 429, 'too_many_registrations');
+    }
+
     public function testMalformedJsonIsABadRequest(): void
     {
         $client = self::createApiClient();

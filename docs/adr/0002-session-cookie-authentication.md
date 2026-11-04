@@ -12,8 +12,15 @@ JWT stored in `localStorage` can be read by any injected script and cannot be re
 - Symfony's stateful firewall with `json_login`, and sessions stored in PostgreSQL.
 - The cookie is `HttpOnly`, `Secure` and `SameSite=Lax`. The session id is regenerated on login, and logout
   invalidates the session.
-- Unsafe methods are protected with Symfony's stateless CSRF check (Origin/Referer) plus the double-submit
-  `csrf-token` header.
+- Unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`) under `/api` are protected against CSRF in three layers:
+  - a **required `csrf-token` header** with a random value of at least 24 characters. A page on another site cannot
+    add a custom header to a request without a CORS preflight, which this API never allows. This is the header
+    variant of Symfony's stateless CSRF check (`check_header: true`); there is no double-submit cookie;
+  - Symfony's stateless check also rejects the request when its `Origin`, `Referer` or `Sec-Fetch-Site` header shows
+    another site;
+  - the `SameSite=Lax` session cookie is not sent with cross-site `POST`, `PUT`, `PATCH` or `DELETE` requests.
+
+  The check runs before the firewall, so login and register are covered too.
 - `login_throttling` limits password guessing.
 
 ## Consequences

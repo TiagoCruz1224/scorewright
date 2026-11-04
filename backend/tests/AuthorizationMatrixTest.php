@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests;
 
+use App\Users\Entity\User;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Routing\RouterInterface;
 
@@ -11,16 +12,31 @@ use Symfony\Component\Routing\RouterInterface;
  * Authorization matrix (architecture §8, MVP criterion 2): the expected status of every /api route for every actor.
  * A new route fails testEveryApiRouteIsInTheMatrix until it is added here. Request bodies are minimal on purpose: the
  * matrix checks who gets through, the feature tests check what happens next.
+ *
+ * Each case runs against a fresh active project with an owner, an evaluator and a viewer, plus a signed-in user who
+ * is not a member. {projectId} is that project and {userId} its viewer; {nonMemberEmail} is the non-member's email.
  */
 final class AuthorizationMatrixTest extends ApiTestCase
 {
-    /** route name => [method, path, JSON body or null, [actor => expected status]] */
+    private const ACTORS = ['anonymous', 'non-member', 'viewer', 'evaluator', 'owner'];
+
+    /** route name => [method, path, JSON body or null, expected status for each of self::ACTORS, in that order] */
     private const MATRIX = [
-        'health' => ['GET', '/api/health', null, ['anonymous' => 200, 'user' => 200]],
-        'auth_register' => ['POST', '/api/auth/register', [], ['anonymous' => 422, 'user' => 422]],
-        'auth_login' => ['POST', '/api/auth/login', ['email' => 'nobody@example.com', 'password' => 'not the password'], ['anonymous' => 401, 'user' => 401]],
-        'auth_logout' => ['POST', '/api/auth/logout', null, ['anonymous' => 204, 'user' => 204]],
-        'me' => ['GET', '/api/me', null, ['anonymous' => 401, 'user' => 200]],
+        'health' => ['GET', '/api/health', null, [200, 200, 200, 200, 200]],
+        'auth_register' => ['POST', '/api/auth/register', [], [422, 422, 422, 422, 422]],
+        'auth_login' => ['POST', '/api/auth/login', ['email' => 'nobody@example.com', 'password' => 'not the password'], [401, 401, 401, 401, 401]],
+        'auth_logout' => ['POST', '/api/auth/logout', null, [204, 204, 204, 204, 204]],
+        'me' => ['GET', '/api/me', null, [401, 200, 200, 200, 200]],
+        'project_list' => ['GET', '/api/projects', null, [401, 200, 200, 200, 200]],
+        'project_create' => ['POST', '/api/projects', ['name' => 'New project'], [401, 201, 201, 201, 201]],
+        'project_show' => ['GET', '/api/projects/{projectId}', null, [401, 404, 200, 200, 200]],
+        'project_update' => ['PATCH', '/api/projects/{projectId}', ['name' => 'Renamed'], [401, 404, 403, 403, 200]],
+        'project_archive' => ['POST', '/api/projects/{projectId}/archive', null, [401, 404, 403, 403, 200]],
+        'project_restore' => ['POST', '/api/projects/{projectId}/restore', null, [401, 404, 403, 403, 200]],
+        'member_list' => ['GET', '/api/projects/{projectId}/members', null, [401, 404, 403, 403, 200]],
+        'member_invite' => ['POST', '/api/projects/{projectId}/members', ['email' => '{nonMemberEmail}', 'role' => 'viewer'], [401, 404, 403, 403, 201]],
+        'member_update' => ['PATCH', '/api/projects/{projectId}/members/{userId}', ['role' => 'evaluator'], [401, 404, 403, 403, 200]],
+        'member_remove' => ['DELETE', '/api/projects/{projectId}/members/{userId}', null, [401, 404, 403, 403, 204]],
     ];
 
     public function testEveryApiRouteIsInTheMatrix(): void
@@ -48,8 +64,8 @@ final class AuthorizationMatrixTest extends ApiTestCase
      */
     public static function routesAndActors(): iterable
     {
-        foreach (self::MATRIX as $route => [, , , $expected]) {
-            foreach (array_keys($expected) as $actor) {
+        foreach (array_keys(self::MATRIX) as $route) {
+            foreach (self::ACTORS as $actor) {
                 yield "$route as $actor" => [$route, $actor];
             }
         }
@@ -58,14 +74,24 @@ final class AuthorizationMatrixTest extends ApiTestCase
     #[DataProvider('routesAndActors')]
     public function testRouteAnswersTheExpectedStatusForEachActor(string $route, string $actor): void
     {
-        [$method, $path, $body, $expected] = self::MATRIX[$route];
+        [$method, $path, $body, $statuses] = self::MATRIX[$route];
         $client = self::createApiClient();
-        if ('user' === $actor) {
-            self::signIn($client, 'matrix@example.com');
+        $fixture = self::createProjectWithMembers();
+        if ('anonymous' !== $actor) {
+            $user = $fixture[$actor];
+            self::assertInstanceOf(User::class, $user);
+            $client->loginUser($user);
         }
 
-        $response = self::requestJson($client, $method, $path, $body);
+        $placeholders = [
+            '{projectId}' => $fixture['project']->getId()->toRfc4122(),
+            '{userId}' => $fixture['viewer']->getId()->toRfc4122(),
+            '{nonMemberEmail}' => $fixture['non-member']->getEmail(),
+        ];
+        $body = null === $body ? null : array_map(static fn (string $value): string => strtr($value, $placeholders), $body);
+        $response = self::requestJson($client, $method, strtr($path, $placeholders), $body);
 
-        self::assertSame($expected[$actor], $response->getStatusCode(), (string) $response->getContent());
+        $expected = array_combine(self::ACTORS, $statuses)[$actor];
+        self::assertSame($expected, $response->getStatusCode(), (string) $response->getContent());
     }
 }

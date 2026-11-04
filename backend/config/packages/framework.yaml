@@ -16,6 +16,17 @@ framework:
         stateless_token_ids: [api]
         check_header: true
 
+    # Registering and inviting both reveal whether an account exists (architecture §9): limit them.
+    rate_limiter:
+        registration:
+            policy: sliding_window
+            limit: 10 # per client IP
+            interval: '1 hour'
+        project_invite:
+            policy: sliding_window
+            limit: 20 # per project and inviting owner
+            interval: '1 hour'
+
     # Unknown request fields are rejected (422) instead of ignored.
     serializer:
         default_context:
