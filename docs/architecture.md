@@ -4,7 +4,7 @@ Status: **approved 2026-11-04** (TASK-020 to TASK-026), revised after the cohere
 architecture and UX. Builds on [requirements.md](requirements.md) and the UX proposal (scoring, results and import
 screens).
 
-The product is called **Scorewright** (`APP_NAME=Scorewright`, used for the UI title). The code uses Symfony's default
+The product is called **Scorewright** (`VITE_APP_NAME=Scorewright` in `frontend/.env`, used for the UI title). The code uses Symfony's default
 `App\` namespace and generic names (`app` database), so a future rename only touches docs, the UI title and the
 repository name.
 

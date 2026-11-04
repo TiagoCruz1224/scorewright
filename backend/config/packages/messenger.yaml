@@ -1,0 +1,9 @@
+framework:
+    messenger:
+        failure_transport: failed
+
+        # Doctrine transport on PostgreSQL (ADR 0003). LISTEN/NOTIFY and 3 retries with backoff are the defaults;
+        # auto_setup=0 because the tables come from a migration.
+        transports:
+            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            failed: 'doctrine://default?queue_name=failed&auto_setup=0'

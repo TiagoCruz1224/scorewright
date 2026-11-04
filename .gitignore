@@ -1,0 +1,5 @@
+# Local overrides for compose.yaml (copy .env.example)
+/.env
+
+/frontend/node_modules/
+/frontend/dist/
