@@ -22,6 +22,11 @@
         "symfony/yaml": "7.4.*"
     },
     "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "phpstan/phpstan": "^2.3",
+        "phpunit/phpunit": "^13.4",
+        "symfony/browser-kit": "7.4.*",
+        "symfony/css-selector": "7.4.*"
     },
     "config": {
         "allow-plugins": {
@@ -62,7 +67,22 @@
         ],
         "post-update-cmd": [
             "@auto-scripts"
+        ],
+        "test": [
+            "@php bin/console doctrine:database:create --env=test --if-not-exists --no-interaction",
+            "@php bin/console doctrine:migrations:migrate --env=test --no-interaction --allow-no-migration",
+            "@php bin/phpunit"
+        ],
+        "check": [
+            "php-cs-fixer check --diff",
+            "phpstan analyse --no-progress --memory-limit=512M",
+            "@test",
+            "@composer audit"
         ]
+    },
+    "scripts-descriptions": {
+        "test": "Create and migrate the test database, then run PHPUnit",
+        "check": "Formatting, static analysis, tests and the dependency audit"
     },
     "conflict": {
         "symfony/symfony": "*"

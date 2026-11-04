@@ -52,6 +52,22 @@ and these directories hold most of the files that PHP and Vite read. The consequ
   (`WATCH_POLLING` in `compose.yaml`).
 - `docker compose down -v` deletes the volumes, including the database.
 
+## Checks
+
+```bash
+./check.sh
+```
+
+One command runs every check in the containers, and exits non-zero on the first failure:
+
+- backend (`composer check`): PHP-CS-Fixer, PHPStan (level 8), PHPUnit against PostgreSQL (a separate `app_test`
+  database, created and migrated by the script) and `composer audit`;
+- frontend (`npm run check`): ESLint, the production build, and `npm audit` (any vulnerability in the dependencies that
+  ship to the browser fails; for development tooling, high and critical ones fail).
+
+On Windows, run it from Git Bash. The CI workflow ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same
+script. To fix the PHP formatting: `docker compose run --rm app vendor/bin/php-cs-fixer fix`.
+
 ## Licence
 
 [MIT](LICENSE)

@@ -428,7 +428,7 @@ injection.
 | Frontend unit | Vitest and Testing Library | Scoring screen (shortcuts, ignored in text fields, autosave and Retry, comment), import-error summary and table, comparison table and chart alternative. |
 | End to end | Playwright with axe-core | MVP acceptance flow 1 on the demo stack, plus automated WCAG checks on the scoring, results and import pages. |
 | Static analysis | PHPStan (level 8 to start), PHP-CS-Fixer, ESLint for JavaScript and JSX (`@eslint/js` recommended rules plus the React Hooks plugin) | Run in CI and locally with one command. |
-| Dependencies | `composer audit`, `npm audit --omit=dev` | CI. |
+| Dependencies | `composer audit`; `npm audit --omit=dev` (any severity in what ships to the browser) and `npm audit --audit-level=high` (dev tooling, including the Vite dev server) | Run in CI and locally with the same command. |
 | Performance | `app:seed-performance` (5,000 cases × 5 runs, one evaluation with scores) and a command that times the list and results queries | Run before each release; target under 500 ms on a laptop. |
 
 SQLite is not used for tests: the schema relies on PostgreSQL types (JSONB, arrays, partial indexes).
