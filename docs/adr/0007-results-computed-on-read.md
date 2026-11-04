@@ -1,6 +1,6 @@
 # 0007. Results computed on read with SQL aggregates
 
-Status: proposed (2026-11-03)
+Status: accepted (approved 2026-11-04)
 
 ## Context
 

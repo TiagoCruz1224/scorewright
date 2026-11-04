@@ -1,6 +1,6 @@
 # 0005. Evaluation items as opaque handles for scoring
 
-Status: proposed (2026-11-03)
+Status: accepted (approved 2026-11-04)
 
 ## Context
 

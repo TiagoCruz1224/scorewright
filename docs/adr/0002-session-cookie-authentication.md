@@ -1,6 +1,6 @@
 # 0002. Session cookie authentication instead of JWT
 
-Status: proposed (2026-11-03)
+Status: accepted (approved 2026-11-04)
 
 ## Context
 

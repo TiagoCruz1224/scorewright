@@ -1,16 +1,17 @@
 # Architecture
 
-Status: **proposal for approval** (TASK-020 to TASK-026), revised after the coherence review of requirements,
-architecture and UX. No application code is written until Tiago approves this document. Builds on
-[requirements.md](requirements.md) and the UX proposal (scoring, results and import screens).
+Status: **approved 2026-11-04** (TASK-020 to TASK-026), revised after the coherence review of requirements,
+architecture and UX. Builds on [requirements.md](requirements.md) and the UX proposal (scoring, results and import
+screens).
 
-"EvalForge" is a working name. The code uses Symfony's default `App\` namespace and generic names (`app` database,
-`APP_NAME` for the UI title), so a rename only touches docs, the UI title and the repository name.
+The product is called **Scorewright** (`APP_NAME=Scorewright`, used for the UI title). The code uses Symfony's default
+`App\` namespace and generic names (`app` database), so a future rename only touches docs, the UI title and the
+repository name.
 
 ## 1. Technology choices
 
-Versions checked against the official sources on 2026-11-03. Library versions not listed here are pinned by
-`composer.lock` and `package-lock.json` when the project is created (TASK-027).
+Versions checked against the official sources on 2026-11-03 (frontend rows on 2026-11-04). Library versions not listed
+here are pinned by `composer.lock` and `package-lock.json` when the project is created (TASK-027).
 
 | Component | Choice | Why |
 |---|---|---|
@@ -19,10 +20,10 @@ Versions checked against the official sources on 2026-11-03. Library versions no
 | ORM | Doctrine ORM 3, DBAL 4, Doctrine Migrations | Symfony's default; migrations are versioned SQL. |
 | Database | **PostgreSQL 18** | Supported until Nov 2030. JSONB, arrays, partial indexes and `LISTEN/NOTIFY` are used below. ([postgresql.org](https://www.postgresql.org/support/versioning/)) |
 | Background jobs | **Symfony Messenger, Doctrine transport** | Uses PostgreSQL (with `LISTEN/NOTIFY`), so no extra service. Redis stays an option if throughput ever needs it. See [ADR 0003](adr/0003-postgresql-and-doctrine-messenger-transport.md). ([symfony.com](https://symfony.com/doc/7.4/messenger.html)) |
-| Frontend | **React 19** (19.3 is current), **TypeScript 6.0**, Vite 8, React Router 8 | TypeScript 7.0 is stable, but typescript-eslint still declares `typescript <6.1.0` as its peer, so 6.0 is used until typescript-eslint supports 7. ([react.dev](https://react.dev/versions), npm registry) |
+| Frontend | **React 19** (19.3 is current), **JavaScript**, **Tailwind CSS 4** (4.3, through `@tailwindcss/vite`), **Vite 8** (8.3), **React Router 8** (8.5) | Plain JavaScript (ES modules, JSX), no TypeScript: one developer must be able to explain every layer, and the API contract is enforced on the server (DTO validation, Problem Details) and by tests. Tailwind 4 needs no config file, only the Vite plugin and `@import "tailwindcss"`. See [ADR 0001](adr/0001-modular-monolith-and-stack.md). ([react.dev](https://react.dev/versions), [Tailwind releases](https://github.com/tailwindlabs/tailwindcss/releases), [vite.dev](https://vite.dev/releases), [React Router releases](https://github.com/remix-run/react-router/releases)) |
 | Node.js (tooling only) | **26 LTS** | Active LTS since 2026-10-28; 24 is in maintenance. Vitest 5 and Vite 8 support it. |
 | Runtime | FrankenPHP (Caddy) from the `dunglas/symfony-docker` template | One container serves the built SPA and `/api` from the same origin. |
-| Tests and quality | PHPUnit, PHPStan, PHP-CS-Fixer; Vitest, Testing Library, Playwright with axe-core; ESLint, `tsc --noEmit` | See §8. |
+| Tests and quality | PHPUnit, PHPStan, PHP-CS-Fixer; Vitest, Testing Library, Playwright with axe-core; ESLint | See §8. |
 | CI | GitHub Actions | Prepared locally; it only runs after publication is approved. |
 
 ## 2. Logical architecture
@@ -65,7 +66,8 @@ Modules call each other through PHP services, never over HTTP.
   the import-based architecture test cannot see. Its queries are reviewed in code review and covered by its own tests.
 
 Frontend layout (`frontend/src/`): `routes/` (one folder per page in the UX page map), `components/`, and `api/`
-(a typed `fetch` client plus a TypeScript type for each response).
+(one small `fetch` client that sends the CSRF header and turns Problem Details responses into errors; no generated
+types).
 - Server state uses React Router loaders and actions. A data-fetching library is added only if a concrete need appears.
 - UI preferences (theme, keyboard shortcuts on/off) are stored in the browser (`localStorage`), not in the database.
 
@@ -425,7 +427,7 @@ injection.
 | Architecture | PHPUnit | Module dependency direction (§3). |
 | Frontend unit | Vitest and Testing Library | Scoring screen (shortcuts, ignored in text fields, autosave and Retry, comment), import-error summary and table, comparison table and chart alternative. |
 | End to end | Playwright with axe-core | MVP acceptance flow 1 on the demo stack, plus automated WCAG checks on the scoring, results and import pages. |
-| Static analysis | PHPStan (level 8 to start), PHP-CS-Fixer, ESLint with typescript-eslint, `tsc --noEmit` | Run in CI and locally with one command. |
+| Static analysis | PHPStan (level 8 to start), PHP-CS-Fixer, ESLint for JavaScript and JSX (`@eslint/js` recommended rules plus the React Hooks plugin) | Run in CI and locally with one command. |
 | Dependencies | `composer audit`, `npm audit --omit=dev` | CI. |
 | Performance | `app:seed-performance` (5,000 cases × 5 runs, one evaluation with scores) and a command that times the list and results queries | Run before each release; target under 500 ms on a laptop. |
 
@@ -479,7 +481,7 @@ the authorization matrix and its endpoints to the API reference (`docs/api.md`).
 | # | Slice | Tasks | Done when |
 |---|---|---|---|
 | 1 | Skeleton: Symfony 7.4 and React/Vite apps, Compose (`app`, `worker`, `db`, `frontend`), health endpoint | 027, 028 | `docker compose up` serves the SPA and `/api/health` from a clean clone |
-| 2 | Quality tooling: one command for tests, PHPStan, PHP-CS-Fixer, ESLint, `tsc`; `composer audit` / `npm audit`; CI workflow | 039, 040, 041 | All checks pass locally with one command; workflow validated |
+| 2 | Quality tooling: one command for tests, PHPStan, PHP-CS-Fixer, ESLint; `composer audit` / `npm audit`; CI workflow | 039, 040, 041 | All checks pass locally with one command; workflow validated |
 | 3 | Users and sessions: register, login, logout, `/api/me`, CSRF, throttling; authorization-matrix harness | 029, 037 | Auth flows tested; matrix test enumerates routes |
 | 4 | Projects and members: `ProjectVoter`, 404 for non-members, archive and restore, invite throttling | 029, 030 | Matrix covers project routes; last-owner and archived rules tested |
 | 5 | Dataset import API (CSV and JSON): validation, field limits, `case_key`, versions, cases list with filters | 030, 031 | Every error code and limit has a fixture; all-or-nothing tested; MVP criterion 3 at API level |
@@ -499,21 +501,19 @@ Order notes:
 - Slice 9 only records check jobs; slice 10 dispatches and processes them, so no slice depends on a later one.
 - The scoring screen (11) comes after the checks (10), so it can show their status.
 
-## 12. Open product questions for Tiago
+## 12. Product decisions
 
 Decided since the first version, and reflected above: one comment per answer; `next` without locking between
 evaluators; optional case `id`; owners can delete evaluations, then unused datasets, runs and rubrics; archived
 projects are read-only, hidden and restorable.
 
-These still change behaviour, so they are not decided here. The design above uses the default shown.
+Decided by Tiago on 2026-11-04 (the proposed defaults were accepted):
 
-1. **Reopening a closed evaluation:** allowed? *Default: no; closing is final.*
-2. **Runs that do not answer every case:** allowed? *Default: allowed. The run shows its coverage ("198 of 200
-   answered") and unanswered cases are not scored.*
-3. **Overall score and weights:** how scale and pass/fail criteria combine. *Default: each criterion normalised to
-   0–100 (scale: (value − 1) / 4 × 100, pass = 100, fail = 0) and averaged with the criterion weights (1 when empty),
-   which gives the "points" the UX shows.*
-4. **Owner bias in blind mode:** the owner can score and also read results while a blind evaluation is open. Accept,
-   or hide results from owners who have scored in it until it closes? *Default: accept; the owner controls the
-   evaluation anyway.*
-5. Licence, final name and a hosted demo remain open in [requirements.md](requirements.md) §8.
+1. **Reopening a closed evaluation:** not allowed; closing is final.
+2. **Runs that do not answer every case:** allowed. The run shows its coverage ("198 of 200 answered") and unanswered
+   cases are not scored.
+3. **Overall score and weights:** each criterion is normalised to 0–100 (scale: (value − 1) / 4 × 100, pass = 100,
+   fail = 0) and averaged with the criterion weights (1 when empty), which gives the "points" the UX shows.
+4. **Owner bias in blind mode:** accepted. The owner can score and also read results while a blind evaluation is open,
+   because the owner controls the evaluation anyway.
+5. Licence (MIT), name (Scorewright) and no hosted demo: see [requirements.md](requirements.md) §8.

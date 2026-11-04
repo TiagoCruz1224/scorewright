@@ -1,6 +1,6 @@
 # 0003. Messenger on the Doctrine transport, no Redis
 
-Status: proposed (2026-11-03)
+Status: accepted (approved 2026-11-04)
 
 ## Context
 

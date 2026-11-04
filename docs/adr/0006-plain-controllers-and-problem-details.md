@@ -1,6 +1,6 @@
 # 0006. Plain Symfony controllers with DTOs and RFC 9457 errors
 
-Status: proposed (2026-11-03)
+Status: accepted (approved 2026-11-04)
 
 ## Context
 

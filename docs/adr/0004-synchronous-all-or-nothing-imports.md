@@ -1,6 +1,6 @@
 # 0004. Imports validated synchronously, all or nothing, files not stored
 
-Status: proposed (2026-11-03)
+Status: accepted (approved 2026-11-04)
 
 ## Context
 

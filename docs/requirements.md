@@ -1,11 +1,11 @@
-# EvalForge — Requirements and MVP scope
+# Scorewright — Requirements and MVP scope
 
-Status: **draft for approval** (TASK-019). Architecture (TASK-020–026) builds on this document; implementation starts
-only after the architecture is approved.
+Status: **approved 2026-11-04** (TASK-019), together with the architecture (TASK-020–026), which builds on this
+document.
 
 ## 1. Purpose
 
-EvalForge is an open-source web platform for evaluating the answers of AI systems. A team collects test cases in
+Scorewright is an open-source web platform for evaluating the answers of AI systems. A team collects test cases in
 datasets, imports the answers that one or more models gave to those cases, scores them with explicit criteria (by hand
 and with deterministic automatic checks) and compares models on the same data.
 
@@ -107,7 +107,7 @@ One person can have different roles in different projects. There is no organisat
 | Quality | Automated backend and frontend tests for the critical flows, static analysis and formatting in CI, all reproducible locally (TASK-037–042). |
 | Accessibility | WCAG 2.2 AA for the scoring screen and dashboards: keyboard use, visible focus, contrast, charts with a text/table alternative. |
 | Documentation | English README with setup, architecture overview, API reference and ADRs. |
-| Licence | Open source (licence to confirm). |
+| Licence | Open source, MIT ([LICENSE](../LICENSE)). |
 
 ## 6. Technology constraints
 
@@ -115,6 +115,9 @@ Proposed in the original plan and to be confirmed against current official docum
 (TASK-020): PHP 8.3+, current supported Symfony LTS, Doctrine with PostgreSQL, Symfony Messenger (Redis or Doctrine
 transport), React with TypeScript, Docker Compose, PHPUnit, PHPStan, frontend tests, GitHub Actions. Modular monolith;
 no microservices without a concrete requirement.
+
+Approved on 2026-11-04 with one change: the frontend is React 19 in **JavaScript** (no TypeScript) with Tailwind CSS 4.
+The confirmed versions are in the [architecture](architecture.md) §1.
 
 ## 7. MVP acceptance criteria
 
@@ -125,8 +128,10 @@ no microservices without a concrete requirement.
 4. The demo command plus Docker Compose gives a working instance from a clean clone, following only the README.
 5. CI runs the backend tests, frontend tests and static analysis, and all pass.
 
-## 8. Open questions for Tiago
+## 8. Decisions
 
-1. Licence: MIT or Apache-2.0?
-2. Keep the name **EvalForge**? (to check for existing projects with the same name before publishing)
-3. Should the first public version include a hosted demo, or only local Docker setup? (A hosted demo has costs.)
+Decided by Tiago on 2026-11-04:
+
+1. Licence: **MIT**.
+2. Name: **Scorewright** (replaces the working name).
+3. No hosted demo for now: the first public version is run locally with Docker Compose only.
