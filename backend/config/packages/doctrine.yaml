@@ -14,11 +14,11 @@ doctrine:
             Doctrine\DBAL\Platforms\PostgreSQLPlatform: identity
         auto_mapping: true
         mappings:
-            App:
+            Users:
                 type: attribute
                 is_bundle: false
-                dir: '%kernel.project_dir%/src/Entity'
-                prefix: 'App\Entity'
+                dir: '%kernel.project_dir%/src/Users/Entity'
+                prefix: 'App\Users\Entity'
 
 when@test:
     doctrine:

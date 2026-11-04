@@ -40,5 +40,7 @@
     </source>
 
     <extensions>
+        <!-- Each test runs in a database transaction that is rolled back afterwards. -->
+        <bootstrap class="DAMA\DoctrineTestBundle\PHPUnit\PHPUnitExtension"/>
     </extensions>
 </phpunit>

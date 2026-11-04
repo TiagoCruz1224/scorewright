@@ -2,11 +2,31 @@
 framework:
     secret: '%env(APP_SECRET)%'
 
-    # Note that the session will be started ONLY if you read or write from it.
-    session: true
+    # Sessions live in PostgreSQL (ADR 0002) and expire after 8 hours without a request.
+    session:
+        handler_id: Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler
+        cookie_secure: true
+        cookie_httponly: true
+        cookie_samesite: lax
+        gc_maxlifetime: 28800
 
-    #esi: true
-    #fragments: true
+    # Stateless CSRF check (Origin/Referer/Sec-Fetch-Site plus the csrf-token header), applied to every unsafe /api
+    # request by App\Http\CsrfListener.
+    csrf_protection:
+        stateless_token_ids: [api]
+        check_header: true
+
+    # Unknown request fields are rejected (422) instead of ignored.
+    serializer:
+        default_context:
+            allow_extra_attributes: false
+
+    # Client errors (4xx, unknown fields) are not server errors: log them as notices, not as errors.
+    exceptions:
+        Symfony\Component\HttpKernel\Exception\HttpExceptionInterface:
+            log_level: notice
+        Symfony\Component\Serializer\Exception\ExtraAttributesException:
+            log_level: notice
 
 when@test:
     framework:
