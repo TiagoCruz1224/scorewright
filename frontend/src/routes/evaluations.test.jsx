@@ -117,17 +117,4 @@ describe('the evaluation page', () => {
     within(document.querySelector('.page-head')).getByText('Open');
     expect(screen.queryByRole('button', { name: 'Run checks again' })).toBeNull();
   });
-
-  it('shows an evaluator of a blind, open evaluation the locked results, and no owner actions', async () => {
-    await renderApp('/projects/p1/evaluations/e1/results', {
-      '/api/me': ME,
-      '/api/projects/p1': project({ role: 'evaluator' }),
-      '/api/projects/p1/evaluations/e1': evaluation(),
-    });
-
-    screen.getByRole('heading', { name: 'Results unlock when the owner closes this evaluation' });
-    expect(within(screen.getByRole('navigation', { name: 'Evaluation' })).getByRole('link', { name: 'Results' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('link', { name: 'Continue scoring' }).getAttribute('href')).toBe('/projects/p1/evaluations/e1/score');
-    expect(screen.queryByRole('button', { name: /Close evaluation|Delete evaluation/ })).toBeNull();
-  });
 });

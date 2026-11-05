@@ -3,7 +3,7 @@ import { Link, redirect, useLoaderData, useNavigate, useRouteLoaderData } from '
 import { api, ApiError } from '../api/client.js';
 import { Icon } from '../components/icons.jsx';
 import { Breadcrumb, usePageTitle } from '../components/layout.jsx';
-import { evaluationPath, resultsLocked, RunName } from './evaluations.jsx';
+import { evaluationPath, resultsLocked, ResultsLink, RunName } from './evaluations.jsx';
 
 const n = (number) => number.toLocaleString('en');
 const clock = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -15,7 +15,7 @@ const isTextField = (element) =>
   element instanceof HTMLElement && (element.isContentEditable || ['TEXTAREA', 'SELECT'].includes(element.tagName) || (element.tagName === 'INPUT' && TYPING.test(element.type)));
 
 /** The ends of a 1–5 scale from its guidance, "1: rude or cold. … 5: warm and clear, without filler." → both phrases. */
-const scaleEnds = (guidance) => {
+export const scaleEnds = (guidance) => {
   const low = guidance.match(/(?:^|[\s.;])1:\s*([^.,;\n]+)/);
   const high = guidance.match(/(?:^|[\s.;])5:\s*([^.,;\n]+)/);
 
@@ -115,6 +115,9 @@ function AllScored({ project, evaluation, back }) {
       <h2 className="empty-title">All {n(evaluation.answers.total)} answers scored</h2>
       <p>{next}</p>
       <div className="actions">
+        <ResultsLink project={project} evaluation={evaluation} className="btn btn-primary">
+          See the results
+        </ResultsLink>
         <Link className="btn" to={back}>
           Back to the evaluation
         </Link>

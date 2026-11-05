@@ -22,14 +22,13 @@ import {
   NewEvaluation,
   newEvaluationAction,
   newEvaluationLoader,
-  Results,
-  resultsLoader,
 } from './routes/evaluations.jsx';
 import { ImportFormat } from './routes/importFormat.jsx';
 import { Members, membersAction, membersLoader } from './routes/members.jsx';
 import { EditRubric, editRubricAction, editRubricLoader, NewRubric, newRubricAction, Rubric, rubricAction, rubricLoader, Rubrics, rubricsLoader } from './routes/rubrics.jsx';
 import { ImportRun, importRunAction, importRunLoader, Run, runAction, runLoader, Runs, runsLoader } from './routes/runs.jsx';
 import { NewProject, newProjectAction, Overview, overviewLoader, ProjectLayout, projectLoader, Projects, projectsLoader } from './routes/projects.jsx';
+import { Results, resultsLoader } from './routes/results.jsx';
 import { Scoring, scoringLoader, scoringStartLoader } from './routes/scoring.jsx';
 import { Settings, settingsAction } from './routes/settings.jsx';
 

@@ -417,6 +417,8 @@
   .bar { height: 12px; border-radius: 3px; flex: none; }
   .bar-a { background: var(--run-a); }
   .bar-b { background: repeating-linear-gradient(135deg, var(--run-b) 0 3px, transparent 3px 6px); box-shadow: inset 0 0 0 1.5px var(--run-b); }
+  /* Runs C to E (an evaluation has up to five): grey, told apart by the letter written beside or above them. */
+  .bar-other, .run-key-other { background: var(--text-muted); }
   .figure { border: 1px solid var(--border); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
   .fig-title { font-weight: 600; }
   .fig-sum { color: var(--text-muted); max-width: 75ch; }

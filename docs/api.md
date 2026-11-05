@@ -46,7 +46,7 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 |---|---|
 | 400 | `malformed_request` (invalid JSON, or a body cut off on the way) |
 | 401 | `unauthenticated` (not signed in), `invalid_credentials` (login) |
-| 403 | `forbidden` (a member without the needed role), `csrf_failed` |
+| 403 | `forbidden` (a member without the needed role), `csrf_failed`, `results_hidden_until_closed` (an evaluator asking for the results of a blind evaluation that is still open) |
 | 404 | `not_found` (also: a project you are not a member of, and any path that does not exist, `/api` included) |
 | 405 | `method_not_allowed` |
 | 409 | `project_archived` (any write to an archived project except restore), `last_owner`, `rubric_locked` (an edit of a rubric that an evaluation uses), `evaluation_closed` (scoring, closing or re-checking a closed evaluation), `check_job_running` (running the automatic checks again, or closing the evaluation, while they are queued or running), `in_use` (deleting a dataset, run or rubric that an evaluation uses; see [Deleting what an evaluation uses](#deleting-what-an-evaluation-uses)) |
@@ -590,6 +590,67 @@ The same item **not in blind mode** has one more field, after `answer`:
 `comment` is `null` when there is none. Automatic scores (from the checks) appear in `scores` with
 `source: automatic`, a `null` `scoredBy`, and `outcome: check_error` with an `errorCode` (such as
 `missing_reference`) when the check could not run.
+
+### Results
+
+`GET P/evaluations/{evaluationId}/results` answers `200` with the evaluation's results, computed when asked
+([ADR 0007](adr/0007-results-computed-on-read.md)): numbers only, never an answer or a case's text.
+
+- **Who:** every member, except an evaluator while the evaluation is blind and open: `403
+  results_hidden_until_closed`, so nobody scoring a blind evaluation learns which run does better. Once it is closed,
+  or when it is not blind, evaluators read them too.
+- **Time:** under 500 ms at the MVP limits (`app:seed-performance`: 5,000 cases, 5 runs, about 150,000 scores).
+
+```json
+{
+  "runs": [
+    { "letter": "A", "id": "01a1ab5e-…", "label": "baseline-v1", "cases": 212, "answers": 212, "scored": 200, "unscored": 12, "overall": 61.4 },
+    { "letter": "B", "id": "01a1ab6e-…", "label": "tuned-v2", "cases": 212, "answers": 198, "scored": 198, "unscored": 0, "overall": 75.4 }
+  ],
+  "criteria": [
+    {
+      "id": "01a1ac2e-…", "name": "Tone", "kind": "scale_1_5", "checkType": null, "weight": 2.0, "measure": "mean",
+      "runs": [
+        { "letter": "A", "n": 200, "mean": 3.4, "passRate": null, "checkErrors": 0,
+          "distribution": [{ "value": 1, "count": 14 }, { "value": 2, "count": 31 }, { "value": 3, "count": 52 }, { "value": 4, "count": 66 }, { "value": 5, "count": 37 }] }
+      ]
+    },
+    {
+      "id": "01a1ac2e-…", "name": "Mentions the order", "kind": "automatic", "checkType": "exact_match", "weight": null, "measure": "passRate",
+      "runs": [
+        { "letter": "A", "n": 190, "mean": null, "passRate": 64.2, "checkErrors": 22,
+          "distribution": [{ "value": 1, "count": 122 }, { "value": 0, "count": 68 }] }
+      ]
+    }
+  ],
+  "tags": [
+    { "tag": "billing", "cases": 46, "criteria": [
+      { "id": "01a1ac2e-…", "runs": [{ "letter": "A", "n": 46, "mean": 3.6, "passRate": null, "checkErrors": 0 }] }
+    ] }
+  ]
+}
+```
+
+(Shortened: `runs` inside each criterion and tag lists every run of the evaluation, in letter order.)
+
+- **`runs`:** each run's coverage and overall score.
+  - `cases` is the dataset version's; `answers` the run's answers in the evaluation (a case the run did not answer
+    has no item, and never counts); `scored` those with every manual score, and `unscored` the rest.
+- **`criteria`:** per criterion and run, `n` (scores given), and:
+  - `mean` (1–5) for a `scale_1_5` criterion, or `passRate` (% of passes) for `pass_fail` and `automatic`
+    ones, as `measure` says; `null` while `n` is 0;
+  - `distribution`: how many of each value, 1 to 5, or 1 (pass) then 0 (fail);
+  - `checkErrors`: automatic checks that could not run (such as `missing_reference`). **They are counted apart:**
+    they are not in `n`, the rate or the distribution, and never count as a fail.
+- **`tags`:** per tag of the version's cases (`cases`: how many have it), most cases first, the same `n`,
+  `mean` or `passRate` and `checkErrors` per criterion and run, over the answers to those cases. A case with
+  several tags counts in each.
+- **Overall score** (architecture §12.3), per run, from 0 to 100:
+  - each criterion's average is normalised to 0–100: a scale as (mean − 1) / 4 × 100, a pass rate as it is;
+  - then averaged with the criteria's weights, an empty weight counting 1:
+    `overall = Σ (weight × normalised) / Σ weight`, over the criteria the run has scores for;
+  - `null` when the run has no score yet. Means and rates are rounded to 2 and 1 decimals; `overall` is worked out
+    from the unrounded values and rounded to 1.
 
 ### Deleting what an evaluation uses
 

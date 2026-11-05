@@ -482,7 +482,15 @@ page or a stack trace.
 
 **Results** are computed on read with SQL aggregates over `score`
 ([ADR 0007](adr/0007-results-computed-on-read.md)): averages and distributions per criterion and run, a breakdown by
-tag, a per-case comparison and the cases with the largest disagreement. The CSV export streams the same queries.
+tag, a per-case comparison and the cases with the largest disagreement.
+
+- `App\Analytics\Results` does it in one scan of the evaluation's scores, grouped by the case's tags (a few dozen
+  combinations), criterion, run, outcome and value, plus one query for the coverage. These reads run in a transaction
+  that lowers PostgreSQL's parallel-query thresholds (`set_config(…, true)`), so the scan uses parallel workers.
+- Measured with `app:seed-performance` (148,800 scores): 143 ms in the process; 167 ms for the whole request in a prod-mode
+  container with the code copied in (median of 20, p95 about 200 ms). With the code bind-mounted from a Windows disk, as
+  in development, every request is slower. From the Windows host the median is 407 ms, because Docker
+  Desktop's port forwarding adds about 250 ms to every request. The CSV export streams the same queries.
 Every cell starting with `=`, `+`, `-`, `@`, tab or carriage return is prefixed with `'` to neutralise formula
 injection.
 

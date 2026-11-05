@@ -24,7 +24,7 @@ const hasManualScoring = (evaluation) => evaluation.progress.total > 0;
 const activeJob = (evaluation) => ['queued', 'running'].includes(evaluation.checkJob?.status);
 
 export const evaluationPath = (project, evaluation) => `/projects/${project.id}/evaluations/${evaluation.id}`;
-const crumbs = (project, ...rest) => [
+export const crumbs = (project, ...rest) => [
   { label: 'Projects', to: '/projects' },
   { label: project.name, to: `/projects/${project.id}` },
   { label: 'Evaluations', to: `/projects/${project.id}/evaluations` },
@@ -84,10 +84,13 @@ export function AnswersProgress({ evaluation }) {
   );
 }
 
-/** Start or Continue scoring, for whoever may score this evaluation; nothing when it has no manual criteria or none missing. */
-export function ScoreLink({ project, evaluation, className = 'btn btn-sm' }) {
+/**
+ * Start or Continue scoring, for whoever may score this evaluation; when there is nothing to score (no manual criteria,
+ * none missing, closed, or a viewer), `fallback`, such as the Results link.
+ */
+export function ScoreLink({ project, evaluation, className = 'btn btn-sm', fallback = null }) {
   if (!canScore(project, evaluation) || !hasManualScoring(evaluation) || evaluation.answers.scored === evaluation.answers.total) {
-    return null;
+    return fallback;
   }
   const started = evaluation.progress.scored > 0;
 
@@ -95,6 +98,15 @@ export function ScoreLink({ project, evaluation, className = 'btn btn-sm' }) {
     <Link className={className} to={`${evaluationPath(project, evaluation)}/score`}>
       <Icon name="play" />
       {started ? 'Continue scoring' : 'Start scoring'}
+    </Link>
+  );
+}
+
+/** Results, for whoever may read them now: not an evaluator while a blind evaluation is open. */
+export function ResultsLink({ project, evaluation, className = 'btn btn-sm', children = 'Results' }) {
+  return resultsLocked(project, evaluation) ? null : (
+    <Link className={className} to={`${evaluationPath(project, evaluation)}/results`}>
+      {children}
     </Link>
   );
 }
@@ -191,7 +203,7 @@ export function Evaluations() {
                       </div>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <ScoreLink project={project} evaluation={evaluation} />
+                      <ScoreLink project={project} evaluation={evaluation} fallback={<ResultsLink project={project} evaluation={evaluation} />} />
                     </td>
                   </tr>
                 ))}
@@ -465,10 +477,12 @@ function usePollWhileChecking(evaluation) {
   }, [active, evaluation, revalidate, state]);
 }
 
-/** The heading, the pills and the sub-navigation, shared by the evaluation's pages (Overview, Results). */
-function EvaluationHead({ project, evaluation, current, actions }) {
-  // Results and Compare come with their screens (slice 12); for now only the locked Results page exists. No dead links.
-  const sections = [['Overview', evaluationPath(project, evaluation)], ...(resultsLocked(project, evaluation) ? [['Results', `${evaluationPath(project, evaluation)}/results`]] : [])];
+/** The heading, the pills and the sub-navigation, shared by the evaluation's pages (Overview, Results). Compare joins with slice 13. */
+export function EvaluationHead({ project, evaluation, current, actions }) {
+  const sections = [
+    ['Overview', evaluationPath(project, evaluation)],
+    ['Results', `${evaluationPath(project, evaluation)}/results`],
+  ];
 
   return (
     <>
@@ -495,15 +509,13 @@ function EvaluationHead({ project, evaluation, current, actions }) {
         </div>
         {actions}
       </div>
-      {sections.length > 1 && (
-        <nav className="subnav" aria-label="Evaluation">
-          {sections.map(([label, to]) => (
-            <Link key={label} to={to} aria-current={label === current ? 'page' : undefined}>
-              {label}
-            </Link>
-          ))}
-        </nav>
-      )}
+      <nav className="subnav" aria-label="Evaluation">
+        {sections.map(([label, to]) => (
+          <Link key={label} to={to} aria-current={label === current ? 'page' : undefined}>
+            {label}
+          </Link>
+        ))}
+      </nav>
     </>
   );
 }
@@ -732,41 +744,5 @@ function CloseEvaluation({ evaluation, problem }) {
         )}
       </div>
     </section>
-  );
-}
-
-/** Only the locked state for now (UX §3.4.5): an evaluator on a blind evaluation that is still open. The results come with slice 12. */
-export async function resultsLoader({ params, request }) {
-  const base = `/api/projects/${params.projectId}`;
-  const [project, evaluation] = await Promise.all([api(base, { request }), api(`${base}/evaluations/${params.evaluationId}`, { request })]);
-  if (!resultsLocked(project, evaluation)) {
-    throw new Response('Not Found', { status: 404 });
-  }
-
-  return { evaluation };
-}
-
-export function Results() {
-  const { evaluation } = useLoaderData();
-  const project = useRouteLoaderData('project');
-  usePageTitle('Results', evaluation.name, project.name);
-
-  return (
-    <>
-      <Breadcrumb items={crumbs(project, { label: evaluation.name, to: evaluationPath(project, evaluation) }, { label: 'Results' })} />
-      <EvaluationHead project={project} evaluation={evaluation} current="Results" />
-      <div className="empty" style={{ borderStyle: 'solid' }}>
-        <span className="empty-icon">
-          <Icon name="lock" size="lg" />
-        </span>
-        <h2 className="empty-title">Results unlock when the owner closes this evaluation</h2>
-        <p>
-          It is blind and still open, so nobody scoring it sees which run did better. Scoring so far: {n(evaluation.answers.scored)} of {plural(evaluation.answers.total, 'answer')}.
-        </p>
-        <div className="actions">
-          <ScoreLink project={project} evaluation={evaluation} className="btn btn-primary" />
-        </div>
-      </div>
-    </>
   );
 }

@@ -4,7 +4,7 @@ import { attempt, ErrorSummary, Field } from '../components/forms.jsx';
 import { Icon } from '../components/icons.jsx';
 import { Breadcrumb, Pager, usePageTitle } from '../components/layout.jsx';
 import { RoleBadge, ROLES } from '../roles.jsx';
-import { AnswersProgress, evaluationPath, ScoreLink, StatePills } from './evaluations.jsx';
+import { AnswersProgress, evaluationPath, ResultsLink, ScoreLink, StatePills } from './evaluations.jsx';
 
 /** "Support assistant" → "SA": the glyph of a project row. */
 const glyph = (name) => {
@@ -320,7 +320,16 @@ function YourEvaluations({ project, evaluations }) {
                 </div>
                 {/* Above the row's stretched link, so both can be clicked. */}
                 <div className="relative z-10">
-                  <ScoreLink project={project} evaluation={evaluation} className="btn btn-primary" />
+                  <ScoreLink
+                    project={project}
+                    evaluation={evaluation}
+                    className="btn btn-primary"
+                    fallback={
+                      <ResultsLink project={project} evaluation={evaluation} className="btn">
+                        See results
+                      </ResultsLink>
+                    }
+                  />
                 </div>
               </li>
             ))}

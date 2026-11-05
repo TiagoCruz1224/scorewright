@@ -75,6 +75,7 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'evaluation_item_show' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/items/{itemId}', null, [401, 404, 403, 200, 200]],
         'evaluation_score' => ['PUT', '/api/projects/{projectId}/evaluations/{evaluationId}/items/{itemId}/scores/{criterionId}', ['value' => 3], [401, 404, 403, 200, 200]],
         'evaluation_comment' => ['PUT', '/api/projects/{projectId}/evaluations/{evaluationId}/items/{itemId}/comment', ['comment' => 'Fine'], [401, 404, 403, 200, 200]],
+        'evaluation_results' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/results', null, [401, 404, 200, 200, 200]],
     ];
 
     /**
@@ -90,6 +91,10 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'evaluation_item_show' => [401, 404, 403, 409, 409],
         'evaluation_score' => [401, 404, 403, 409, 409],
         'evaluation_comment' => [401, 404, 403, 409, 409],
+    ];
+    /** While a blind evaluation is open, an evaluator does not read its results (403 results_hidden_until_closed). */
+    private const WHEN_OPEN_AND_BLIND = [
+        'evaluation_results' => [401, 404, 200, 403, 200],
     ];
 
     /** Every route, not only those under /api: a route added elsewhere must be in the matrix too. */
@@ -153,7 +158,11 @@ final class AuthorizationMatrixTest extends ApiTestCase
     {
         $response = self::requestAs($route, $actor, state: $state);
 
-        $statuses = str_starts_with($state, 'closed') ? self::WHEN_CLOSED[$route] ?? self::MATRIX[$route][3] : self::MATRIX[$route][3];
+        $statuses = match ($state) {
+            'closed', 'closed and blind' => self::WHEN_CLOSED[$route] ?? self::MATRIX[$route][3],
+            'open and blind' => self::WHEN_OPEN_AND_BLIND[$route] ?? self::MATRIX[$route][3],
+            default => self::MATRIX[$route][3],
+        };
         self::assertSame(array_combine(self::ACTORS, $statuses)[$actor], $response->getStatusCode(), (string) $response->getContent());
     }
 

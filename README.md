@@ -76,6 +76,24 @@ and these directories hold most of the files that PHP and Vite read. The consequ
   (`WATCH_POLLING` in `compose.yaml`).
 - `docker compose down -v` deletes the volumes, including the database.
 
+### Data at the MVP limits
+
+```bash
+docker compose exec app php bin/console app:seed-performance --no-debug --owner=you@example.com
+```
+
+`app:seed-performance` creates a new project, "Performance seed", with data at the MVP limits, to time the results
+(ADR 0007): 5,000 cases with tags, 5 runs (the last one partial), a rubric of 3 manual and 3 automatic criteria with
+weights, and one blind evaluation with every score given, about 150,000. It takes about 10 seconds, writes the same
+data each time, and only runs in the `dev` and `test` environments.
+
+- `--owner` makes an existing user the owner, so the project shows up in their account; without it, the owner is a
+  new user who cannot sign in.
+- `--cases` takes fewer cases (1 to 5,000).
+- `--no-debug` keeps Doctrine from logging every insert, which in debug mode would not fit in PHP's 128 MB.
+
+Each run adds another project; archive it in its Settings page to hide it from the list.
+
 ## Checks
 
 ```bash
