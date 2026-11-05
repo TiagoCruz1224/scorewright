@@ -24,7 +24,7 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 - **Caching:** every response has `Cache-Control: no-store`.
 - **Projects:** every project resource lives under `/api/projects/{projectId}`. If you are not a member of that
   project, or it does not exist, the answer is `404 not_found` (the same for both), before any other check. A
-  dataset, version, run or rubric of another project is also a `404`, the same as one that does not exist.
+  dataset, version, run, rubric, evaluation or item of another project is also a `404`, the same as one that does not exist.
 - **Uploads** (dataset imports) are `multipart/form-data` with the file in a field named `file`; anything else answers
   `415`.
 - **Errors** are `application/problem+json` ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)) with a stable `code`:
@@ -48,10 +48,10 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 | 403 | `forbidden` (a member without the needed role), `csrf_failed` |
 | 404 | `not_found` (also: a project you are not a member of, and any path that does not exist, `/api` included) |
 | 405 | `method_not_allowed` |
-| 409 | `project_archived` (any write to an archived project except restore), `last_owner`, `rubric_locked` (an edit of a rubric that an evaluation uses) |
+| 409 | `project_archived` (any write to an archived project except restore), `last_owner`, `rubric_locked` (an edit of a rubric that an evaluation uses), `evaluation_closed` (scoring or closing a closed evaluation), `in_use` (deleting a dataset, run or rubric that an evaluation uses; see [Deleting what an evaluation uses](#deleting-what-an-evaluation-uses)) |
 | 413 | `payload_too_large` (body over 6 MiB, or an import file over 5 MiB) |
 | 415 | `unsupported_media_type` (a body that is not `application/json`, or none where one is needed; for uploads, not `multipart/form-data`) |
-| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken`, `label_taken`, `not_found` (a dataset version that is not the project's), `required` (a missing upload), and for rubrics `too_few`, `too_many`, `not_allowed`, `invalid_regex` and `max_below_min` |
+| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken`, `label_taken`, `not_found` (a dataset version that is not the project's), `required` (a missing upload), `is_null` (a value that must be sent), for rubrics `too_few`, `too_many`, `not_allowed`, `invalid_regex` and `max_below_min`, and for evaluations `duplicate_run`, `other_dataset_version` and `not_manual` |
 | 422 | `import_rejected`: the dataset file has errors and nothing was saved (see [Import errors](#import-errors)) |
 | 429 | `too_many_login_attempts`, `too_many_registrations`, `too_many_invites`, `too_many_projects`; with `Retry-After` |
 | 500 | `internal_error` (details are only in the server log) |
@@ -164,7 +164,7 @@ SHA-256.
 | `GET P/datasets` | member | `200`, a list ordered by name; each dataset has its `latestVersion`. |
 | `POST P/datasets` | owner | Multipart: `name` (1 to 200 characters on one line, unique in the project: `422 name_taken` otherwise) and `file`. `201` with the dataset and `"versions": [version 1]`. |
 | `GET P/datasets/{datasetId}` | member | `200` with the dataset and all its `versions`, newest first. |
-| `DELETE P/datasets/{datasetId}` | owner | `204`; its versions, cases and runs go too. |
+| `DELETE P/datasets/{datasetId}` | owner | `204`; its versions, cases and runs go too. `409 in_use` while an evaluation uses one of its versions. |
 | `POST P/datasets/{datasetId}/versions` | owner | Multipart: `file`. `201` with the new version, numbered after the latest. |
 | `GET P/dataset-versions` | member | `200`, a list of every version in the project, each with its `dataset` (`id`, `name`), ordered by dataset name and then newest first: to choose a version, as when importing a run. |
 | `GET P/dataset-versions/{versionId}/cases` | member | `200`, a list of the version's cases in file order. `?tag=` keeps the cases with exactly that tag; `?q=` keeps those whose input, reference or case key contains the text, ignoring case. |
@@ -301,7 +301,7 @@ only. Answers will appear only in scoring and in results, where blind mode appli
 | `GET P/runs` | member | `200`, a list of runs, newest first. `?datasetVersion=` keeps the runs of one version. |
 | `POST P/runs` | owner | Multipart: `datasetVersion` (a version id of this project), `label` (1 to 100 characters on one line, unique in that version: `422 label_taken` otherwise), `modelDescription` (optional, up to 2,000 characters, line breaks allowed) and `file`. `201` with the run. A `datasetVersion` that is not one of the project's (another project's, unknown or malformed) answers `422` with `{"field": "datasetVersion", "code": "not_found"}`, the same for all. |
 | `GET P/runs/{runId}` | member | `200` with the run. |
-| `DELETE P/runs/{runId}` | owner | `204`; its answers go too. |
+| `DELETE P/runs/{runId}` | owner | `204`; its answers go too. `409 in_use` while an evaluation includes it. |
 
 ### Run files
 
@@ -367,7 +367,7 @@ A rubric:
 | `POST P/rubrics` | owner | `201` with the rubric. Body `{"name", "criteria"}`, below. |
 | `GET P/rubrics/{rubricId}` | member | `200` with the rubric. |
 | `PUT P/rubrics/{rubricId}` | owner | `200` with the rubric. The same body as `POST`, which **replaces** the name and every criterion (new criterion ids, in the new order). A locked rubric answers `409 rubric_locked`; a body that is not valid answers `422` first. |
-| `DELETE P/rubrics/{rubricId}` | owner | `204`; its criteria go too, and its copies stay. |
+| `DELETE P/rubrics/{rubricId}` | owner | `204`; its criteria go too, and its copies stay. `409 in_use` while an evaluation uses it. |
 | `POST P/rubrics/{rubricId}/duplicate` | owner | `201` with the copy: the same criteria, not locked, with `duplicatedFrom` set. Optional body `{"name": "…"}`; without it the name is "<name> (copy)" (shortened to fit 200 characters). Works on a locked rubric too. |
 
 ### Rubric body
@@ -404,3 +404,129 @@ puts the pattern between delimiters that no pattern can contain, so a `/` needs 
 flag (the pattern and the answer are read as UTF-8), plus `i` when `ignoreCase` is true. The pattern must compile when
 the rubric is saved: otherwise `invalid_regex`, with PCRE's reason in the message, such as "This pattern does not
 compile: missing closing parenthesis at offset 7."
+
+## Evaluations
+
+An evaluation applies a rubric to one to five runs of one dataset version. Creating it makes one **item** per answer
+of those runs: the items are what people score. Members read evaluations; owners create, close and delete them.
+
+- **Creating** locks the rubric (`lockedAt`): from then on it is never edited, only duplicated. When the rubric has
+  automatic criteria, a check job is queued (`checkJob.status` is `queued`); the checks run in the background.
+- **Items** are grouped by case, in the order of the cases. Within a case the runs follow their letters or, in
+  **blind mode**, a random order. Item ids are random (UUID v4), so they say nothing about the run or the order. A
+  run that does not answer a case has no item for it.
+- **Progress** counts manual scores only: `total` is items × manual criteria. Automatic checks report through the
+  check job.
+- **Closing is final:** a closed evaluation is never reopened and takes no more scores or comments.
+
+An evaluation:
+
+```json
+{
+  "id": "01a1ac9e-…",
+  "name": "Weekly check",
+  "status": "open",
+  "blind": true,
+  "datasetVersion": { "id": "01a1ab4c-…", "number": 2, "dataset": { "id": "01a1ab4c-…", "name": "Support cases" } },
+  "rubric": { "id": "01a1ac2e-…", "name": "Support quality" },
+  "progress": { "scored": 37, "total": 400 },
+  "createdAt": "2026-11-05T13:00:00+00:00",
+  "closedAt": null,
+  "runs": [
+    { "letter": "A", "id": "01a1ab5e-…", "label": "baseline-v1" },
+    { "letter": "B", "id": "01a1ab6e-…", "label": "candidate-v2" }
+  ],
+  "checkJob": { "status": "queued", "processed": 0, "total": 400, "errorCode": null }
+}
+```
+
+`runs` lists the letters and labels in blind mode too: no answer here is tied to them, and the items never are (below).
+In a list, each evaluation has everything but `runs` and `checkJob`. `checkJob` is `null` when the rubric has no
+automatic criteria.
+
+| Endpoint | Who | Answer |
+|---|---|---|
+| `GET P/evaluations` | member | `200`, a list, newest first. |
+| `POST P/evaluations` | owner | `201` with the evaluation. Body below. |
+| `GET P/evaluations/{evaluationId}` | member | `200` with the evaluation. Never answers. |
+| `POST P/evaluations/{evaluationId}/close` | owner | `200` with the evaluation (`status: closed`, `closedAt` set). Closing a closed one answers `409 evaluation_closed`. |
+| `DELETE P/evaluations/{evaluationId}` | owner | `204`; its items, scores, comments and check jobs go too. The rubric stays locked. |
+
+Body of `POST P/evaluations`:
+
+| Field | | Rules |
+|---|---|---|
+| `name` | required | 1 to 200 characters on one line, unique in the project (`name_taken`) |
+| `datasetVersion` | required | a version id of this project |
+| `runs` | required | 1 to 5 run ids (`too_few`, `too_many`), each once (`runs[N]`: `duplicate_run`), all of that version (`runs[N]`: `other_dataset_version`). Their order gives the letters A, B, C… |
+| `rubric` | required | a rubric id of this project |
+| `blind` | optional, default `true` | hides the run in every item response |
+
+A version, run or rubric that is not the project's, whether it belongs to another project, does not exist or is not an
+id, answers `422` with `not_found` on its field, the same in every case. All the errors come in one answer.
+
+### Scoring
+
+Owners and evaluators score; viewers get `403`. Only open evaluations: on a closed one every scoring route, reads
+included, answers `409 evaluation_closed`.
+
+| Endpoint | Answer |
+|---|---|
+| `GET P/evaluations/{id}/items/next` | `200` with the first item, by position, that lacks a manual score for some manual criterion. `204` when every item has them all, or when the rubric has no manual criteria. |
+| `GET P/evaluations/{id}/items/{itemId}` | `200` with the item. |
+| `PUT P/evaluations/{id}/items/{itemId}/scores/{criterionId}` | `{"value": 4}`: 1 to 5 on a `scale_1_5` criterion, 1 (pass) or 0 (fail) on a `pass_fail` one (`not_in_range` otherwise). An automatic criterion answers `422 not_manual`: its result comes from its check. A criterion of another rubric is a `404`. `200` with the item. |
+| `PUT P/evaluations/{id}/items/{itemId}/comment` | `{"comment": "…"}`: up to 5,000 characters, line breaks allowed; an empty one clears it. One per answer, independent of the scores. `200` with the item. |
+
+- Both `PUT`s are upserts: sending one twice is harmless. Each records who and when (`scoredBy`, `updatedAt`).
+- **There is no locking between evaluators** in the MVP: two of them can get the same item from `next`, and for each
+  criterion the last save wins.
+
+An item **in blind mode**: no run id, label or letter, and no answer id.
+
+```json
+{
+  "id": "6f1c2a0e-9d4b-4c1e-8a55-0b7e3f2d9c41",
+  "case": { "key": "refund-1", "input": "I want a refund.
+My order is late.", "reference": "Apologise and confirm the refund." },
+  "answer": "Sorry about the delay. Your refund is on its way.",
+  "criteria": [
+    { "id": "01a1ac2e-…", "kind": "scale_1_5", "name": "Tone", "guidance": "1: rude or cold.
+5: warm and clear.", "weight": 2 },
+    { "id": "01a1ac2e-…", "kind": "pass_fail", "name": "Correct", "guidance": "Pass when every fact is right.", "weight": null },
+    { "id": "01a1ac2e-…", "kind": "automatic", "name": "Mentions the order", "guidance": "", "weight": null }
+  ],
+  "scores": [
+    { "criterionId": "01a1ac2e-…", "value": 4, "outcome": "scored", "errorCode": null, "source": "manual",
+      "scoredBy": { "id": "01a1ab3a-…", "displayName": "Bea" }, "updatedAt": "2026-11-05T13:10:00+00:00" }
+  ],
+  "comment": { "text": "Polite, but says nothing about the date.", "by": { "id": "01a1ab3a-…", "displayName": "Bea" }, "updatedAt": "2026-11-05T13:11:00+00:00" },
+  "progress": { "scored": 38, "total": 400 }
+}
+```
+
+The same item **not in blind mode** has one more field, after `answer`:
+
+```json
+  "run": { "letter": "B", "label": "candidate-v2" },
+```
+
+`comment` is `null` when there is none. Automatic scores (from the checks) appear in `scores` with
+`source: automatic`, a `null` `scoredBy`, and `outcome: check_error` with an `errorCode` (such as
+`missing_reference`) when the check could not run.
+
+### Deleting what an evaluation uses
+
+A dataset, a run or a rubric that an evaluation uses answers `DELETE` with `409 in_use`, listing the evaluations to
+delete first:
+
+```json
+{
+  "type": "/problems/in-use",
+  "title": "Evaluations use it: delete them first",
+  "status": 409,
+  "code": "in_use",
+  "evaluations": [{ "id": "01a1ac9e-…", "name": "Weekly check" }]
+}
+```
+
+Once those evaluations are deleted, the delete works.

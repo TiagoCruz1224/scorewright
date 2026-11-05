@@ -35,6 +35,16 @@ final class ApiProblem extends \RuntimeException implements HttpExceptionInterfa
         return new self(422, 'validation_failed', 'The request is not valid', ['errors' => $errors]);
     }
 
+    /**
+     * 409 in_use: evaluations use the resource, so it cannot be deleted until they are (architecture §4, "Deleting").
+     *
+     * @param list<array{id: string, name: string}> $evaluations the ones to delete first
+     */
+    public static function inUse(array $evaluations): self
+    {
+        return new self(409, 'in_use', 'Evaluations use it: delete them first', ['evaluations' => $evaluations]);
+    }
+
     /** 429 with Retry-After: the number of seconds until the rate limiter accepts the next attempt. */
     public static function tooManyRequests(string $problemCode, string $title, \DateTimeInterface $retryAt): self
     {

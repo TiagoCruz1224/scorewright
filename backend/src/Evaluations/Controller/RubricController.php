@@ -8,11 +8,13 @@ use App\Evaluations\Dto\DuplicateRubricRequest;
 use App\Evaluations\Dto\SaveRubricRequest;
 use App\Evaluations\Entity\Criterion;
 use App\Evaluations\Entity\Rubric;
+use App\Evaluations\Repository\EvaluationRepository;
 use App\Evaluations\Repository\RubricRepository;
 use App\Http\ApiProblem;
 use App\Http\PageQuery;
 use App\Projects\ProjectAccess;
 use App\Projects\Security\ProjectVoter;
+use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
@@ -37,6 +39,7 @@ final class RubricController
 
     public function __construct(
         private readonly RubricRepository $rubrics,
+        private readonly EvaluationRepository $evaluations,
         private readonly EntityManagerInterface $entityManager,
     ) {
     }
@@ -103,16 +106,23 @@ final class RubricController
         return new JsonResponse(self::rubricJson($rubric));
     }
 
-    /** Deletes the rubric with its criteria (database cascade); copies of it keep their criteria. */
+    /** Deletes the rubric with its criteria (database cascade), unless an evaluation uses it; its copies stay. */
     #[Route('/api/projects/{projectId}/rubrics/{rubricId}', name: 'rubric_delete', methods: ['DELETE'], requirements: self::RUBRIC)]
     #[IsGranted(ProjectVoter::MANAGE, 'projectAccess')]
     public function delete(ProjectAccess $projectAccess, string $rubricId): Response
     {
         $rubric = $this->findRubric($projectAccess, $rubricId);
-        // Slice 9: when an evaluation uses this rubric, answer 409 in_use here, listing those evaluations
-        // (architecture §4, "Deleting").
-        $this->entityManager->remove($rubric);
-        $this->entityManager->flush();
+        // Not while an evaluation uses it (architecture §4, "Deleting").
+        $usedBy = $this->evaluations->using($rubric);
+        if ([] !== $usedBy) {
+            throw ApiProblem::inUse($usedBy);
+        }
+        try {
+            $this->entityManager->remove($rubric);
+            $this->entityManager->flush();
+        } catch (ForeignKeyConstraintViolationException) {
+            throw ApiProblem::inUse([]); // an evaluation created meanwhile: the foreign key refuses the delete
+        }
 
         return new Response(null, Response::HTTP_NO_CONTENT);
     }

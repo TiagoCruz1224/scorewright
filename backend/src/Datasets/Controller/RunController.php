@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Datasets\Controller;
 
+use App\Datasets\DeletionRequested;
 use App\Datasets\Dto\CreateRunRequest;
 use App\Datasets\Dto\RunListQuery;
 use App\Datasets\Entity\Run;
@@ -15,8 +16,10 @@ use App\Http\ApiProblem;
 use App\Http\FormFields;
 use App\Projects\ProjectAccess;
 use App\Projects\Security\ProjectVoter;
+use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -43,6 +46,7 @@ final class RunController
         private readonly DatasetImporter $importer,
         private readonly EntityManagerInterface $entityManager,
         private readonly ValidatorInterface $validator,
+        private readonly EventDispatcherInterface $dispatcher,
     ) {
     }
 
@@ -103,16 +107,23 @@ final class RunController
         return new JsonResponse(self::runJson($this->findRun($projectAccess, $runId)));
     }
 
-    /** Deletes the run with its answers (database cascade). */
+    /** Deletes the run with its answers (database cascade), unless an evaluation includes it. */
     #[Route('/api/projects/{projectId}/runs/{runId}', name: 'run_delete', methods: ['DELETE'], requirements: self::RUN)]
     #[IsGranted(ProjectVoter::MANAGE, 'projectAccess')]
     public function delete(ProjectAccess $projectAccess, string $runId): Response
     {
         $run = $this->findRun($projectAccess, $runId);
-        // Slice 9: when an evaluation includes this run, answer 409 in_use here, listing those evaluations
-        // (architecture §4, "Deleting").
-        $this->entityManager->remove($run);
-        $this->entityManager->flush();
+        // Not while an evaluation includes it (architecture §4, "Deleting").
+        $usedBy = $this->dispatcher->dispatch(new DeletionRequested($run))->usedBy;
+        if ([] !== $usedBy) {
+            throw ApiProblem::inUse($usedBy);
+        }
+        try {
+            $this->entityManager->remove($run);
+            $this->entityManager->flush();
+        } catch (ForeignKeyConstraintViolationException) {
+            throw ApiProblem::inUse([]); // an evaluation created meanwhile: the foreign key refuses the delete
+        }
 
         return new Response(null, Response::HTTP_NO_CONTENT);
     }

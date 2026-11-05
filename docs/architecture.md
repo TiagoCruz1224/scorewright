@@ -202,6 +202,7 @@ erDiagram
         bool blind
         string status "open | closed"
         timestamptz closed_at
+        timestamptz created_at
     }
     EVALUATION_RUN {
         uuid evaluation_id PK, FK
@@ -235,6 +236,7 @@ erDiagram
         int processed
         int total
         string error_code
+        timestamptz created_at
     }
 ```
 
@@ -260,7 +262,10 @@ erDiagram
 - **Deleting (owner only):**
   - Deleting an **evaluation** deletes its items, scores, comments and check jobs.
   - A **dataset** (with its versions, cases and runs), a **run** or a **rubric** can be deleted only when no
-    evaluation uses it. Otherwise the answer is `409 in_use`, listing the evaluations to delete first.
+    evaluation uses it. Otherwise the answer is `409 in_use`, listing the evaluations to delete first. The
+    foreign keys from the evaluation tables have no cascade, so the database refuses it too. Datasets cannot use the
+    Evaluations module (§3): before deleting a dataset or a run, it dispatches a `DeletionRequested` event, and the
+    Evaluations module lists the evaluations that use it.
 - **Archiving:**
   - An archived project is read-only: every write answers `409 project_archived`, except `POST …/restore` by an owner.
   - It is hidden from `GET /api/projects` unless `?archived=true` is passed.
@@ -338,7 +343,7 @@ Prefix `P = /api/projects/{projectId}`. Roles: O = owner, E = evaluator, V = vie
 ### Scoring
 
 - `PUT …/scores/{criterionId}` and `PUT …/comment` are idempotent upserts, so sending them twice is harmless.
-- Writing to a closed evaluation answers `409 evaluation_closed`.
+- Scoring a closed evaluation answers `409 evaluation_closed`, for reads (`items/next`, `items/{itemId}`) too.
 - `items/next` returns the first item by `position` that still lacks a manual score for some criterion. The order is
   grouped by case; in blind mode, runs are shuffled within each case when the evaluation is created.
 - **There is no locking between evaluators in the MVP.** Two evaluators can be given the same item, and for each

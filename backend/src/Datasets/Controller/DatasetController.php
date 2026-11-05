@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Datasets\Controller;
 
+use App\Datasets\DeletionRequested;
 use App\Datasets\Dto\CaseListQuery;
 use App\Datasets\Dto\CreateDatasetRequest;
 use App\Datasets\Entity\Dataset;
@@ -18,9 +19,11 @@ use App\Http\FormFields;
 use App\Http\PageQuery;
 use App\Projects\ProjectAccess;
 use App\Projects\Security\ProjectVoter;
+use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -48,6 +51,7 @@ final class DatasetController
         private readonly DatasetImporter $importer,
         private readonly EntityManagerInterface $entityManager,
         private readonly ValidatorInterface $validator,
+        private readonly EventDispatcherInterface $dispatcher,
     ) {
     }
 
@@ -112,10 +116,17 @@ final class DatasetController
     public function delete(ProjectAccess $projectAccess, string $datasetId): Response
     {
         $dataset = $this->findDataset($projectAccess, $datasetId);
-        // Slice 9: when an evaluation uses one of its versions, answer 409 in_use here, listing those evaluations
-        // (architecture §4, "Deleting").
-        $this->entityManager->remove($dataset);
-        $this->entityManager->flush();
+        // Not while an evaluation uses one of its versions (architecture §4, "Deleting").
+        $usedBy = $this->dispatcher->dispatch(new DeletionRequested($dataset))->usedBy;
+        if ([] !== $usedBy) {
+            throw ApiProblem::inUse($usedBy);
+        }
+        try {
+            $this->entityManager->remove($dataset);
+            $this->entityManager->flush();
+        } catch (ForeignKeyConstraintViolationException) {
+            throw ApiProblem::inUse([]); // an evaluation created meanwhile: the foreign key refuses the delete
+        }
 
         return new Response(null, Response::HTTP_NO_CONTENT);
     }

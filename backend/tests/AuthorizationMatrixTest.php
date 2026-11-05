@@ -19,7 +19,8 @@ use Symfony\Component\Security\Http\AccessMapInterface;
  * Each case runs against a fresh active project with an owner, an evaluator and a viewer, plus a signed-in user who
  * is not a member, a dataset with one version, a run of that version and a rubric. {projectId} is that project and
  * {userId} its viewer; {nonMemberEmail} is the non-member's email; {datasetId}, {versionId}, {runId} and {rubricId}
- * are the dataset, its version, the run and the rubric.
+ * are the dataset, its version, the run and the rubric. The routes of one evaluation also get an evaluation of that run
+ * with that rubric, in each state: {evaluationId}, its {itemId} and the rubric's manual {criterionId}.
  */
 final class AuthorizationMatrixTest extends ApiTestCase
 {
@@ -64,6 +65,29 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'rubric_update' => ['PUT', '/api/projects/{projectId}/rubrics/{rubricId}', ['name' => 'Renamed rubric', 'criteria' => self::CRITERIA], [401, 404, 403, 403, 200]],
         'rubric_delete' => ['DELETE', '/api/projects/{projectId}/rubrics/{rubricId}', null, [401, 404, 403, 403, 204]],
         'rubric_duplicate' => ['POST', '/api/projects/{projectId}/rubrics/{rubricId}/duplicate', ['name' => 'Copy'], [401, 404, 403, 403, 201]],
+        'evaluation_list' => ['GET', '/api/projects/{projectId}/evaluations', null, [401, 404, 200, 200, 200]],
+        'evaluation_create' => ['POST', '/api/projects/{projectId}/evaluations', ['name' => 'New evaluation', 'datasetVersion' => '{versionId}', 'runs' => ['{runId}'], 'rubric' => '{rubricId}'], [401, 404, 403, 403, 201]],
+        'evaluation_show' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}', null, [401, 404, 200, 200, 200]],
+        'evaluation_close' => ['POST', '/api/projects/{projectId}/evaluations/{evaluationId}/close', null, [401, 404, 403, 403, 200]],
+        'evaluation_delete' => ['DELETE', '/api/projects/{projectId}/evaluations/{evaluationId}', null, [401, 404, 403, 403, 204]],
+        'evaluation_item_next' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/items/next', null, [401, 404, 403, 200, 200]],
+        'evaluation_item_show' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/items/{itemId}', null, [401, 404, 403, 200, 200]],
+        'evaluation_score' => ['PUT', '/api/projects/{projectId}/evaluations/{evaluationId}/items/{itemId}/scores/{criterionId}', ['value' => 3], [401, 404, 403, 200, 200]],
+        'evaluation_comment' => ['PUT', '/api/projects/{projectId}/evaluations/{evaluationId}/items/{itemId}/comment', ['comment' => 'Fine'], [401, 404, 403, 200, 200]],
+    ];
+
+    /**
+     * The routes of one evaluation run in each state: open or closed, blind or not. MATRIX gives the status of an open
+     * evaluation; a closed one answers these instead (closing is final, and scoring stops: 409 evaluation_closed). Blind
+     * mode changes what the scoring routes say, not who may call them (EvaluationTest checks what they say).
+     */
+    private const STATES = ['open', 'open and blind', 'closed', 'closed and blind'];
+    private const WHEN_CLOSED = [
+        'evaluation_close' => [401, 404, 403, 403, 409],
+        'evaluation_item_next' => [401, 404, 403, 409, 409],
+        'evaluation_item_show' => [401, 404, 403, 409, 409],
+        'evaluation_score' => [401, 404, 403, 409, 409],
+        'evaluation_comment' => [401, 404, 403, 409, 409],
     ];
 
     /** Every route, not only those under /api: a route added elsewhere must be in the matrix too. */
@@ -86,7 +110,10 @@ final class AuthorizationMatrixTest extends ApiTestCase
      */
     public static function routesAndActors(): iterable
     {
-        foreach (array_keys(self::MATRIX) as $route) {
+        foreach (self::MATRIX as $route => [, $path]) {
+            if (str_contains($path, '{evaluationId}')) {
+                continue; // in every state, below
+            }
             foreach (self::ACTORS as $actor) {
                 yield "$route as $actor" => [$route, $actor];
             }
@@ -100,6 +127,32 @@ final class AuthorizationMatrixTest extends ApiTestCase
 
         $expected = array_combine(self::ACTORS, self::MATRIX[$route][3])[$actor];
         self::assertSame($expected, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    /**
+     * @return iterable<string, array{string, string, string}>
+     */
+    public static function evaluationRoutesActorsAndStates(): iterable
+    {
+        foreach (self::MATRIX as $route => [, $path]) {
+            if (!str_contains($path, '{evaluationId}')) {
+                continue;
+            }
+            foreach (self::STATES as $state) {
+                foreach (self::ACTORS as $actor) {
+                    yield "$route on an evaluation $state, as $actor" => [$route, $actor, $state];
+                }
+            }
+        }
+    }
+
+    #[DataProvider('evaluationRoutesActorsAndStates')]
+    public function testEvaluationRouteAnswersTheExpectedStatusInEachState(string $route, string $actor, string $state): void
+    {
+        $response = self::requestAs($route, $actor, state: $state);
+
+        $statuses = str_starts_with($state, 'closed') ? self::WHEN_CLOSED[$route] ?? self::MATRIX[$route][3] : self::MATRIX[$route][3];
+        self::assertSame(array_combine(self::ACTORS, $statuses)[$actor], $response->getStatusCode(), (string) $response->getContent());
     }
 
     /**
@@ -136,9 +189,10 @@ final class AuthorizationMatrixTest extends ApiTestCase
     }
 
     /**
-     * @param bool $wrongBodyType send a JSON route's body as a form, or an upload route's fields as JSON
+     * @param bool   $wrongBodyType send a JSON route's body as a form, or an upload route's fields as JSON
+     * @param string $state         for the routes of one evaluation: one of self::STATES
      */
-    private static function requestAs(string $route, string $actor, bool $wrongBodyType = false): Response
+    private static function requestAs(string $route, string $actor, bool $wrongBodyType = false, string $state = 'open'): Response
     {
         [$method, $path, $body] = self::MATRIX[$route];
         $client = self::createApiClient();
@@ -161,8 +215,25 @@ final class AuthorizationMatrixTest extends ApiTestCase
             '{runId}' => $run->getId()->toRfc4122(),
             '{rubricId}' => $rubric->getId()->toRfc4122(),
         ];
+        // Only for the routes of one evaluation: an evaluation keeps its rubric, run and dataset from changing.
+        if (str_contains($path, '{evaluationId}')) {
+            $evaluation = self::createEvaluation($rubric, [$run], blind: str_contains($state, 'blind'), closed: str_starts_with($state, 'closed'));
+            $item = self::firstItem($evaluation);
+            $placeholders += [
+                '{evaluationId}' => $evaluation->getId()->toRfc4122(),
+                '{itemId}' => $item->getId()->toRfc4122(),
+                '{criterionId}' => $rubric->getCriteria()[0]->getId()->toRfc4122(), // Tone, a scale_1_5 criterion
+            ];
+        }
         $uri = strtr($path, $placeholders);
-        $body = null === $body ? null : array_map(static fn (mixed $value): mixed => \is_string($value) ? strtr($value, $placeholders) : $value, $body);
+        $fill = static function (mixed $value) use (&$fill, $placeholders): mixed {
+            return match (true) {
+                \is_string($value) => strtr($value, $placeholders),
+                \is_array($value) => array_map($fill, $value),
+                default => $value,
+            };
+        };
+        $body = null === $body ? null : array_map($fill, $body);
 
         if (isset($body['@file'])) {
             $file = $body['@file'];

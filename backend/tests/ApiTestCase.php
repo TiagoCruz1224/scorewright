@@ -12,7 +12,11 @@ use App\Datasets\Entity\TestCase;
 use App\Evaluations\Entity\CheckType;
 use App\Evaluations\Entity\CriterionData;
 use App\Evaluations\Entity\CriterionKind;
+use App\Evaluations\Entity\Evaluation;
+use App\Evaluations\Entity\EvaluationItem;
+use App\Evaluations\Entity\EvaluationRun;
 use App\Evaluations\Entity\Rubric;
+use App\Evaluations\Repository\EvaluationItemRepository;
 use App\Projects\Entity\Project;
 use App\Projects\Entity\ProjectMember;
 use App\Projects\Entity\ProjectRole;
@@ -157,6 +161,46 @@ abstract class ApiTestCase extends WebTestCase
         $entityManager->flush();
 
         return $rubric;
+    }
+
+    /**
+     * An evaluation of the runs (letters A, B… in this order) with the rubric, made as the API makes it: its items by
+     * EvaluationItemRepository::createFor, and the rubric locked.
+     *
+     * @param non-empty-list<Run> $runs
+     */
+    protected static function createEvaluation(Rubric $rubric, array $runs, bool $blind = false, bool $closed = false, string $name = 'Evaluation'): Evaluation
+    {
+        $entityManager = self::getContainer()->get('doctrine.orm.entity_manager');
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+        $items = self::getContainer()->get(EvaluationItemRepository::class);
+        self::assertInstanceOf(EvaluationItemRepository::class, $items);
+
+        $evaluation = new Evaluation($rubric->getProject(), $runs[0]->getDatasetVersion(), $rubric, $name, $blind);
+        $rubric->lock();
+        $entityManager->persist($evaluation);
+        foreach ($runs as $index => $run) {
+            $entityManager->persist(new EvaluationRun($evaluation, $run, 'ABCDE'[$index]));
+        }
+        $entityManager->flush();
+        $items->createFor($evaluation, $runs);
+        if ($closed) {
+            $evaluation->close();
+            $entityManager->flush();
+        }
+
+        return $evaluation;
+    }
+
+    /** The evaluation's first item by position. */
+    protected static function firstItem(Evaluation $evaluation): EvaluationItem
+    {
+        $entityManager = self::getContainer()->get('doctrine.orm.entity_manager');
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+        $item = $entityManager->getRepository(EvaluationItem::class)->findOneBy(['evaluation' => $evaluation], ['position' => 'ASC']);
+        self::assertInstanceOf(EvaluationItem::class, $item);
+
+        return $item;
     }
 
     protected static function fixturePath(string $name): string

@@ -53,6 +53,21 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
     expect(screen.queryByRole('button', { name: /Change role|Remove/ })).toBeNull();
   });
 
+  it('marks a step done in words once it is, and keeps the others as links', async () => {
+    const one = { ...page([{ id: 'x' }]), perPage: 1 };
+    await renderApp('/projects/p1', {
+      '/api/me': ME,
+      '/api/projects/p1': project({ role: 'owner' }),
+      '/api/projects/p1/datasets?perPage=1': one,
+      '/api/projects/p1/runs?perPage=1': { ...page([]), perPage: 1 },
+      '/api/projects/p1/rubrics?perPage=1': one,
+    });
+
+    const steps = within(screen.getByRole('heading', { name: 'Next steps' }).parentElement).getAllByRole('listitem');
+    expect(steps.map((step) => step.textContent)).toEqual(['Import a dataset: ✓ done', 'Import runs', 'Create a rubric: ✓ done']);
+    expect(steps.map((step) => within(step).queryByRole('link')?.getAttribute('href') ?? null)).toEqual([null, '/projects/p1/runs/new', null]);
+  });
+
   it('starts the owner’s next steps with importing a dataset, then runs, then a rubric', async () => {
     await renderPage('/projects/p1', { role: 'owner' });
 
