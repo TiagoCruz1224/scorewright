@@ -69,6 +69,7 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'evaluation_create' => ['POST', '/api/projects/{projectId}/evaluations', ['name' => 'New evaluation', 'datasetVersion' => '{versionId}', 'runs' => ['{runId}'], 'rubric' => '{rubricId}'], [401, 404, 403, 403, 201]],
         'evaluation_show' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}', null, [401, 404, 200, 200, 200]],
         'evaluation_close' => ['POST', '/api/projects/{projectId}/evaluations/{evaluationId}/close', null, [401, 404, 403, 403, 200]],
+        'evaluation_automatic_checks' => ['POST', '/api/projects/{projectId}/evaluations/{evaluationId}/automatic-checks', null, [401, 404, 403, 403, 202]],
         'evaluation_delete' => ['DELETE', '/api/projects/{projectId}/evaluations/{evaluationId}', null, [401, 404, 403, 403, 204]],
         'evaluation_item_next' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/items/next', null, [401, 404, 403, 200, 200]],
         'evaluation_item_show' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/items/{itemId}', null, [401, 404, 403, 200, 200]],
@@ -84,6 +85,7 @@ final class AuthorizationMatrixTest extends ApiTestCase
     private const STATES = ['open', 'open and blind', 'closed', 'closed and blind'];
     private const WHEN_CLOSED = [
         'evaluation_close' => [401, 404, 403, 403, 409],
+        'evaluation_automatic_checks' => [401, 404, 403, 403, 409],
         'evaluation_item_next' => [401, 404, 403, 409, 409],
         'evaluation_item_show' => [401, 404, 403, 409, 409],
         'evaluation_score' => [401, 404, 403, 409, 409],

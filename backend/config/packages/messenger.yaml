@@ -5,5 +5,20 @@ framework:
         # Doctrine transport on PostgreSQL (ADR 0003). LISTEN/NOTIFY and 3 retries with backoff are the defaults;
         # auto_setup=0 because the tables come from a migration.
         transports:
-            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    # A message whose worker stopped half-way (a container restart) is delivered again after this many
+                    # seconds, instead of the default hour. A full check job at the MVP limits takes far less.
+                    redeliver_timeout: 300
             failed: 'doctrine://default?queue_name=failed&auto_setup=0'
+
+        routing:
+            App\Evaluations\Checks\RunAutomaticChecks: async
+
+when@test:
+    framework:
+        messenger:
+            transports:
+                # Tests read the dispatched messages, and consume them with messenger:consume.
+                async: 'in-memory://'

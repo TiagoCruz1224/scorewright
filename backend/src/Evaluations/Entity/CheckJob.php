@@ -11,7 +11,8 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * A run of the automatic checks over an evaluation's items (architecture §7). At most one is queued or running per
- * evaluation: a partial unique index. Slice 9 creates it queued; slice 10 dispatches and runs it.
+ * evaluation: a partial unique index. The API creates it queued; RunAutomaticChecksHandler runs it, and sets its status,
+ * progress and error code in SQL.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'check_job')]
@@ -31,7 +32,7 @@ class CheckJob
     #[ORM\Column]
     private int $processed = 0;
 
-    /** Set by slice 10 when a job cannot finish. */
+    /** Set by RunAutomaticChecksHandler, in SQL, when the job fails. */
     #[ORM\Column(length: 50, nullable: true)]
     private ?string $errorCode = null; // @phpstan-ignore property.unusedType
 

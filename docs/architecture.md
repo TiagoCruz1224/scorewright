@@ -391,10 +391,10 @@ Every error is `application/problem+json` (RFC 9457) with a stable machine-reada
 | 401 | Not signed in |
 | 403 | Member without the needed role, or an evaluator asking for the results of an open blind evaluation (`results_hidden_until_closed`) |
 | 404 | Resource missing **or in a project the user is not a member of**; any unknown path, including `/api` |
-| 409 | `rubric_locked`, `evaluation_closed`, `last_owner`, `in_use`, `project_archived`, check job already active |
+| 409 | `rubric_locked`, `evaluation_closed`, `last_owner`, `in_use`, `project_archived`, `check_job_running` |
 | 413 | Request body over 6 MiB, or an import file over its limit (5 MiB by default) |
 | 415 | Body that is not `application/json` (imports: not `multipart/form-data`) |
-| 422 | Validation or import errors, including unknown request fields; a name or label already used (`name_taken`, `label_taken`) |
+| 422 | Validation or import errors, including unknown request fields; a name or label already used (`name_taken`, `label_taken`); re-checking an evaluation without automatic criteria (`no_automatic_criteria`) |
 | 429 | Login, registration, invites or project creation throttled; `Retry-After` gives the seconds to wait |
 
 Every error is Problem Details, whatever the path: the backend only serves the API, so no path shows Symfony's debug
@@ -448,17 +448,28 @@ page or a stack trace.
 - Creating an evaluation, or `POST …/automatic-checks`, creates a `CHECK_JOB` and dispatches
   `RunAutomaticChecks(jobId)`. Messenger uses the Doctrine transport, `auto_setup: false` (the table comes from a
   migration), 3 retries with backoff, and a `failed` transport.
-- The handler processes items in batches of 500 and upserts automatic scores, so a retry or re-run is idempotent. It
-  updates `processed/total`, which the evaluation page polls every 5 s at most.
-- The checks are pure functions over (answer, reference, params): exact match, contains, does not contain, regex,
-  length limits and valid JSON.
+  - **Dispatch happens after the commit**, so the worker always finds the job, whatever the transport. If it fails,
+    the job stays `queued`: `POST …/automatic-checks` on a queued job dispatches it again instead of creating
+    another. A running job answers `409 check_job_running`; a closed evaluation, `409 evaluation_closed`.
+- The handler (`RunAutomaticChecksHandler`) processes items in batches of 500 and upserts automatic scores, so a retry
+  or re-run is idempotent. Each batch commits its scores with `processed/total`, which the evaluation page polls every
+  5 s at most.
+  - It skips a message whose job is gone (its evaluation was deleted), already `succeeded`, or no longer the latest.
+  - An exception sets the job `failed` with `error_code = unexpected_error`, and Messenger retries the message; a
+    retry runs the job from the start.
+  - A worker stopped half-way (a container restart) leaves its message unacknowledged: the Doctrine transport
+    delivers it again after `redeliver_timeout`, 5 minutes here instead of the default hour, and the job runs again.
+    Messages that were only queued wait in the table.
+- The checks are pure functions over (answer, reference, params), in `App\Evaluations\Checks\Checks`: exact match,
+  contains, does not contain, regex, length limits and valid JSON.
   - `exact_match` on a case without a reference gives `outcome = check_error`, `error_code = missing_reference` and
     `value = null`. The results count these separately; they are not failures.
   - Regex patterns are validated when the rubric is saved (they must compile; max 500 characters). They are written
     without delimiters; the server adds delimiters that no pattern can contain and the `u` flag (`i` with
     `ignoreCase`), so the same pattern means the same at save time and at run time.
   - At run time, a PCRE error such as the backtrack limit gives `check_error` (`regex_error`), not a crash. This guards
-    against catastrophic backtracking.
+    against catastrophic backtracking: `(a+)+$` on 30,000 characters stops in a few milliseconds. So PCRE's verbs
+    (`(*SKIP)`, `(*FAIL)`…) stay allowed: the limit is the guard, not a list of forbidden syntax.
 - The worker runs `messenger:consume async --time-limit=3600 --memory-limit=256M` under Compose's restart policy.
 
 **Results** are computed on read with SQL aggregates over `score`

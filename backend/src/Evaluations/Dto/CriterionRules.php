@@ -12,8 +12,8 @@ use App\Http\NoControlCharactersValidator;
 /**
  * One criterion of a rubric body (architecture §4, §7): {kind, name, guidance, weight, checkType, checkParams}.
  * - scale_1_5 and pass_fail need guidance and take no check;
- * - automatic needs a checkType, whose parameters are checked here when the rubric is saved; the checks themselves run
- *   in slice 10.
+ * - automatic needs a checkType, whose parameters are checked here when the rubric is saved; the checks themselves are
+ *   App\Evaluations\Checks\Checks.
  *
  * Errors name the field from the criterion ("checkParams.pattern"); SaveRubricRequest puts "criteria[N]." before it.
  */

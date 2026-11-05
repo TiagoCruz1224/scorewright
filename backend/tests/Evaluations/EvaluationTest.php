@@ -45,7 +45,7 @@ final class EvaluationTest extends ApiTestCase
             ['letter' => 'A', 'id' => $baseline->getId()->toRfc4122(), 'label' => 'baseline'],
             ['letter' => 'B', 'id' => $candidate->getId()->toRfc4122(), 'label' => 'candidate'],
         ], $evaluation['runs']);
-        // 5 items (3 + 2 answers) × 2 manual criteria; the automatic one waits for its check job (slice 10).
+        // 5 items (3 + 2 answers) × 2 manual criteria: progress never counts the automatic one.
         self::assertSame(['scored' => 0, 'total' => 10], $evaluation['progress']);
         self::assertSame(['status' => 'queued', 'processed' => 0, 'total' => 5, 'errorCode' => null], $evaluation['checkJob']);
 
@@ -376,6 +376,7 @@ final class EvaluationTest extends ApiTestCase
 
         self::assertProblem(self::create($client, $path, $version, [$run], $rubric, ['name' => 'New']), 409, 'project_archived');
         self::assertProblem(self::requestJson($client, 'POST', "$base/close"), 409, 'project_archived');
+        self::assertProblem(self::requestJson($client, 'POST', "$base/automatic-checks"), 409, 'project_archived');
         self::assertProblem(self::requestJson($client, 'DELETE', $base), 409, 'project_archived');
         self::assertProblem(self::requestJson($client, 'PUT', "$base/items/$item/scores/".$rubric->getCriteria()[0]->getId(), ['value' => 3]), 409, 'project_archived');
         self::assertProblem(self::requestJson($client, 'PUT', "$base/items/$item/comment", ['comment' => 'Hi']), 409, 'project_archived');

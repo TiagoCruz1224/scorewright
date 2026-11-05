@@ -7,8 +7,10 @@ namespace App\Evaluations\Controller;
 use App\Datasets\Entity\Run;
 use App\Datasets\Repository\DatasetVersionRepository;
 use App\Datasets\Repository\RunRepository;
+use App\Evaluations\Checks\RunAutomaticChecks;
 use App\Evaluations\Dto\CreateEvaluationRequest;
 use App\Evaluations\Entity\CheckJob;
+use App\Evaluations\Entity\CheckJobStatus;
 use App\Evaluations\Entity\CriterionKind;
 use App\Evaluations\Entity\Evaluation;
 use App\Evaluations\Entity\EvaluationRun;
@@ -23,10 +25,13 @@ use App\Projects\Security\ProjectVoter;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\MapQueryString;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
+use Symfony\Component\Messenger\Exception\ExceptionInterface as MessengerException;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
@@ -49,6 +54,8 @@ final class EvaluationController
         private readonly RunRepository $runs,
         private readonly RubricRepository $rubrics,
         private readonly EntityManagerInterface $entityManager,
+        private readonly MessageBusInterface $bus,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -69,7 +76,8 @@ final class EvaluationController
 
     /**
      * Creates the evaluation with its items, locks the rubric and, when the rubric has automatic criteria, queues a
-     * check job (slice 10 runs it), all in one transaction.
+     * check job, all in one transaction. The job is dispatched to the worker after the commit, so the worker always
+     * finds it (architecture §7).
      */
     #[Route('/api/projects/{projectId}/evaluations', name: 'evaluation_create', methods: ['POST'], requirements: self::PROJECT)]
     #[IsGranted(ProjectVoter::MANAGE, 'projectAccess')]
@@ -109,7 +117,7 @@ final class EvaluationController
         }
 
         try {
-            $evaluation = $this->entityManager->wrapInTransaction(function () use ($projectAccess, $version, $rubric, $body, $runs): Evaluation {
+            [$evaluation, $job] = $this->entityManager->wrapInTransaction(function () use ($projectAccess, $version, $rubric, $body, $runs): array {
                 // FOR UPDATE pairs with RubricController::update: an edit commits before this, or sees the lock.
                 $this->entityManager->refresh($rubric, LockMode::PESSIMISTIC_WRITE);
                 $rubric->lock();
@@ -121,14 +129,19 @@ final class EvaluationController
                 $this->entityManager->flush();
 
                 $itemCount = $this->items->createFor($evaluation, array_values($runs));
+                $job = null;
                 if (self::hasAutomaticCriteria($rubric)) {
-                    $this->entityManager->persist(new CheckJob($evaluation, $itemCount));
+                    $job = new CheckJob($evaluation, $itemCount);
+                    $this->entityManager->persist($job);
                 }
 
-                return $evaluation;
+                return [$evaluation, $job];
             });
         } catch (UniqueConstraintViolationException) {
             throw self::nameTaken(); // created by a concurrent request
+        }
+        if (null !== $job) {
+            $this->dispatch($job);
         }
 
         return new JsonResponse($this->detailsJson($evaluation), Response::HTTP_CREATED);
@@ -156,6 +169,42 @@ final class EvaluationController
         return new JsonResponse($this->detailsJson($evaluation));
     }
 
+    /**
+     * Runs the automatic checks again (owner, open evaluations only: closing is final, so the scores no longer change):
+     * - a new job, unless one is queued: that one is dispatched again, which also recovers a job whose dispatch failed
+     *   (the handler does a job once, however many messages name it);
+     * - a running job answers 409 check_job_running; a rubric without automatic criteria, 422 no_automatic_criteria.
+     */
+    #[Route('/api/projects/{projectId}/evaluations/{evaluationId}/automatic-checks', name: 'evaluation_automatic_checks', methods: ['POST'], requirements: self::EVALUATION)]
+    #[IsGranted(ProjectVoter::MANAGE, 'projectAccess')]
+    public function runAutomaticChecks(ProjectAccess $projectAccess, string $evaluationId): JsonResponse
+    {
+        $evaluation = $this->findEvaluation($projectAccess, $evaluationId);
+        if ($evaluation->isClosed()) {
+            throw self::closed();
+        }
+        if (!self::hasAutomaticCriteria($evaluation->getRubric())) {
+            throw new ApiProblem(422, 'no_automatic_criteria', 'The rubric of this evaluation has no automatic criteria to check');
+        }
+
+        $job = $this->evaluations->latestCheckJob($evaluation);
+        if (CheckJobStatus::Running === $job?->getStatus()) {
+            throw self::checkJobRunning();
+        }
+        if (null === $job || CheckJobStatus::Queued !== $job->getStatus()) {
+            $job = new CheckJob($evaluation, $this->items->count(['evaluation' => $evaluation]));
+            $this->entityManager->persist($job);
+            try {
+                $this->entityManager->flush();
+            } catch (UniqueConstraintViolationException) {
+                throw self::checkJobRunning(); // queued by a concurrent request
+            }
+        }
+        $this->dispatch($job);
+
+        return new JsonResponse($this->detailsJson($evaluation), Response::HTTP_ACCEPTED);
+    }
+
     /** Deletes the evaluation with its items, scores, comments and check jobs (database cascade). The rubric stays locked. */
     #[Route('/api/projects/{projectId}/evaluations/{evaluationId}', name: 'evaluation_delete', methods: ['DELETE'], requirements: self::EVALUATION)]
     #[IsGranted(ProjectVoter::MANAGE, 'projectAccess')]
@@ -170,6 +219,21 @@ final class EvaluationController
     public static function closed(): ApiProblem
     {
         return new ApiProblem(409, 'evaluation_closed', 'The evaluation is closed: it takes no more scores or comments, and it is never reopened');
+    }
+
+    /** A dispatch that fails leaves the job queued, and POST …/automatic-checks dispatches it again. */
+    private function dispatch(CheckJob $job): void
+    {
+        try {
+            $this->bus->dispatch(new RunAutomaticChecks($job->getId()->toRfc4122()));
+        } catch (MessengerException $exception) {
+            $this->logger->error('The check job {job} could not be dispatched; it stays queued.', ['job' => $job->getId()->toRfc4122(), 'exception' => $exception]);
+        }
+    }
+
+    private static function checkJobRunning(): ApiProblem
+    {
+        return new ApiProblem(409, 'check_job_running', 'The automatic checks are already running for this evaluation. Wait for them to finish');
     }
 
     private function findEvaluation(ProjectAccess $projectAccess, string $evaluationId): Evaluation

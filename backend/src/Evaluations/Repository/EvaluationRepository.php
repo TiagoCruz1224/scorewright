@@ -101,9 +101,10 @@ final class EvaluationRepository extends ServiceEntityRepository
         return $this->getEntityManager()->getRepository(EvaluationRun::class)->findBy(['evaluation' => $evaluation], ['letter' => 'ASC']);
     }
 
+    /** created_at keeps whole seconds: within one, the time-ordered v7 id tells the newer job. */
     public function latestCheckJob(Evaluation $evaluation): ?CheckJob
     {
-        return $this->getEntityManager()->getRepository(CheckJob::class)->findOneBy(['evaluation' => $evaluation], ['createdAt' => 'DESC']);
+        return $this->getEntityManager()->getRepository(CheckJob::class)->findOneBy(['evaluation' => $evaluation], ['createdAt' => 'DESC', 'id' => 'DESC']);
     }
 
     /**

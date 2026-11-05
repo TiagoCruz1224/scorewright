@@ -13,8 +13,8 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * One score per item and criterion: a unique index, so a save is an upsert in SQL (ScoreRepository::saveManual). A manual
- * score is 1–5 or 1/0, by a person; an automatic one comes from a check (slice 10), with a null value and an error
- * code when the check could not run.
+ * score is 1–5 or 1/0, by a person; an automatic one is 1/0 from a check (ScoreRepository::saveAutomatic), with a null
+ * value and an error code when the check could not run.
  */
 #[ORM\Entity(repositoryClass: ScoreRepository::class)]
 #[ORM\Table(name: 'score')]

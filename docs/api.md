@@ -49,11 +49,12 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 | 403 | `forbidden` (a member without the needed role), `csrf_failed` |
 | 404 | `not_found` (also: a project you are not a member of, and any path that does not exist, `/api` included) |
 | 405 | `method_not_allowed` |
-| 409 | `project_archived` (any write to an archived project except restore), `last_owner`, `rubric_locked` (an edit of a rubric that an evaluation uses), `evaluation_closed` (scoring or closing a closed evaluation), `in_use` (deleting a dataset, run or rubric that an evaluation uses; see [Deleting what an evaluation uses](#deleting-what-an-evaluation-uses)) |
+| 409 | `project_archived` (any write to an archived project except restore), `last_owner`, `rubric_locked` (an edit of a rubric that an evaluation uses), `evaluation_closed` (scoring, closing or re-checking a closed evaluation), `check_job_running` (running the automatic checks while they run), `in_use` (deleting a dataset, run or rubric that an evaluation uses; see [Deleting what an evaluation uses](#deleting-what-an-evaluation-uses)) |
 | 413 | `payload_too_large` (body over 6 MiB, or an import file over 5 MiB); always Problem Details, also over 8 MiB, where the web server answers |
 | 415 | `unsupported_media_type` (a body that is not `application/json`, or none where one is needed; for uploads, not `multipart/form-data`) |
 | 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `invalid_characters` (a value that is not valid UTF-8, in a form field or a query), `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken`, `label_taken`, `not_found` (a dataset version that is not the project's), `required` (a missing upload), `is_null` (a value that must be sent), for rubrics `too_few`, `too_many`, `not_allowed`, `invalid_regex` and `max_below_min`, and for evaluations `duplicate_run`, `other_dataset_version` and `not_manual` |
 | 422 | `import_rejected`: the dataset file has errors and nothing was saved (see [Import errors](#import-errors)) |
+| 422 | `no_automatic_criteria`: running the automatic checks of an evaluation whose rubric has none |
 | 429 | `too_many_login_attempts`, `too_many_registrations`, `too_many_invites`, `too_many_projects`, or `too_many_requests` for any other; with `Retry-After` |
 | 500 | `internal_error` (details are only in the server log) |
 | other | `http_error`: a status this table does not list, with its standard title |
@@ -396,23 +397,29 @@ Each criterion:
 | `checkType` | required for `automatic`, not allowed otherwise (`not_allowed`) | below |
 | `checkParams` | an object for `automatic` (may be left out when the check needs none), not allowed otherwise | below |
 
-The checks of automatic criteria. Each gives pass or fail; they run in the background when an evaluation starts.
-Parameters that are not listed answer `unknown_field`, and `ignoreCase` is `false` when left out.
+The checks of automatic criteria. Each gives pass or fail; they run in the background when an evaluation starts (see
+[Automatic checks](#automatic-checks)). Parameters that are not listed answer `unknown_field`, and `ignoreCase` is
+`false` when left out. With `ignoreCase`, both texts are lower-cased (`mb_strtolower`) before they are compared.
 
 | `checkType` | `checkParams` | Passes when the answer… |
 |---|---|---|
-| `exact_match` | `{"ignoreCase"?: bool}` | equals the case's reference, both without spaces at the ends. A case without a reference gets a check error (`missing_reference`), not a fail. |
+| `exact_match` | `{"ignoreCase"?: bool}` | equals the case's reference, both without white space at the ends (Unicode spaces and line breaks too). A case without a reference gets a check error (`missing_reference`), not a fail. |
 | `contains` | `{"text": "…", "ignoreCase"?: bool}`, text 1 to 500 characters on one line | contains the text |
 | `not_contains` | the same | does not contain the text |
 | `regex` | `{"pattern": "…", "ignoreCase"?: bool}`, pattern 1 to 500 characters on one line | matches the pattern |
-| `length` | `{"min"?: int, "max"?: int}`, at least one, each 0 to 50,000, `min` ≤ `max` (`max_below_min`) | has from `min` to `max` characters |
-| `valid_json` | none | is valid JSON as a whole |
+| `length` | `{"min"?: int, "max"?: int}`, at least one, each 0 to 50,000, `min` ≤ `max` (`max_below_min`) | has from `min` to `max` characters (Unicode code points), both included |
+| `valid_json` | none | is valid JSON as a whole: an object, an array or a single value such as `"text"`, with white space around it allowed |
 
 **Regex patterns** are PCRE, written **without delimiters or flags**: `^Refund \d+`, not `/^Refund \d+/i`. The server
 puts the pattern between delimiters that no pattern can contain, so a `/` needs no escaping, and always adds the `u`
 flag (the pattern and the answer are read as UTF-8), plus `i` when `ignoreCase` is true. The pattern must compile when
 the rubric is saved: otherwise `invalid_regex`, with PCRE's reason in the message, such as "This pattern does not
-compile: missing closing parenthesis at offset 7."
+compile: missing closing parenthesis at offset 7." It matches anywhere in the answer unless anchored with `^` and `$`.
+
+When the check runs, any PCRE error gives a check error (`regex_error`) for that answer, never a crash: catastrophic
+backtracking such as `(a+)+$` on a long answer stops at PCRE's backtrack limit in milliseconds, and the same goes for
+the recursion and JIT stack limits and an answer that is not valid UTF-8. That limit is the guard against slow
+patterns, so PCRE's verbs, such as `(*SKIP)` and `(*FAIL)`, are allowed.
 
 ## Evaluations
 
@@ -420,7 +427,8 @@ An evaluation applies a rubric to one to five runs of one dataset version. Creat
 of those runs: the items are what people score. Members read evaluations; owners create, close and delete them.
 
 - **Creating** locks the rubric (`lockedAt`): from then on it is never edited, only duplicated. When the rubric has
-  automatic criteria, a check job is queued (`checkJob.status` is `queued`); the checks run in the background.
+  automatic criteria, a check job is queued (`checkJob.status` is `queued`) and the checks run in the background (see
+  [Automatic checks](#automatic-checks)).
 - **Items** are grouped by case, in the order of the cases. Within a case the runs follow their letters or, in
   **blind mode**, a random order. Item ids are random (UUID v4), so they say nothing about the run or the order. A
   run that does not answer a case has no item for it.
@@ -459,6 +467,7 @@ automatic criteria.
 | `POST P/evaluations` | owner | `201` with the evaluation. Body below. |
 | `GET P/evaluations/{evaluationId}` | member | `200` with the evaluation. Never answers. |
 | `POST P/evaluations/{evaluationId}/close` | owner | `200` with the evaluation (`status: closed`, `closedAt` set). Closing a closed one answers `409 evaluation_closed`. |
+| `POST P/evaluations/{evaluationId}/automatic-checks` | owner | `202` with the evaluation: the automatic checks run again. See [Automatic checks](#automatic-checks). |
 | `DELETE P/evaluations/{evaluationId}` | owner | `204`; its items, scores, comments and check jobs go too. The rubric stays locked. |
 
 Body of `POST P/evaluations`:
@@ -473,6 +482,38 @@ Body of `POST P/evaluations`:
 
 A version, run or rubric that is not the project's, whether it belongs to another project, does not exist or is not an
 id, answers `422` with `not_found` on its field, the same in every case. All the errors come in one answer.
+
+### Automatic checks
+
+A **check job** runs every automatic criterion of the rubric on every item, in the background.
+
+- **When it starts:**
+  - creating an evaluation whose rubric has automatic criteria queues one, which goes to the worker once the
+    evaluation is saved;
+  - `POST P/evaluations/{evaluationId}/automatic-checks` runs the checks again.
+- **`checkJob` in the evaluation** is the latest job: `status` goes `queued` → `running` → `succeeded`, or `failed`.
+  `processed` of `total` items are done, updated every 500 items, so the evaluation page can poll it.
+- **A job that fails** has `errorCode: "unexpected_error"`. The worker tries it 3 more times, with a growing delay;
+  each try starts it again, so it can still end as `succeeded`. After that, running the checks again is the way out.
+- **Results:** each check stores, for each item and automatic criterion, a score with `source: automatic` and no
+  scorer:
+  - `value` 1 (passes) or 0 (fails), with `outcome: scored`;
+  - or, when the check could not run, `value: null`, `outcome: check_error` and the reason in `errorCode`:
+    `missing_reference` (`exact_match` on a case without a reference) or `regex_error` (see
+    [Rubric body](#rubric-body)). A check error is not a fail: the results count it apart.
+- **Running it again gives the same rows:** a score is replaced, never added. So does a job that a stopped worker
+  left half-done: its message comes back to the worker after 5 minutes, and the job starts again.
+- **Progress** (`progress`) never counts automatic scores, and `items/next` ignores them.
+
+`POST P/evaluations/{evaluationId}/automatic-checks` (owner, no body) answers `202` with the evaluation:
+
+| When | Answer |
+|---|---|
+| The latest job succeeded or failed, or there is none | a new job, `queued` |
+| The latest job is `queued` | the same job, sent to the worker again; this also recovers a job that never reached it. A job is done once, however many times it is sent. |
+| The latest job is `running` | `409 check_job_running` |
+| The evaluation is closed | `409 evaluation_closed`: closing is final, and its scores no longer change |
+| The rubric has no automatic criteria | `422 no_automatic_criteria` |
 
 ### Scoring
 

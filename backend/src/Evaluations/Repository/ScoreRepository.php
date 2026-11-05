@@ -38,6 +38,29 @@ final class ScoreRepository extends ServiceEntityRepository
     }
 
     /**
+     * Saves the results of automatic checks: upserts on (item, criterion), so a re-run gives the same rows. A value of
+     * null with an error code is a check that could not run (outcome check_error). No one scored them: scored_by is null.
+     *
+     * @param list<array{string, string, int|null, string|null}> $scores [item id, criterion id, value, error code]
+     */
+    public function saveAutomatic(array $scores): void
+    {
+        // 6 parameters a row: 1,000 rows stay far below PostgreSQL's 65,535.
+        foreach (array_chunk($scores, 1000) as $chunk) {
+            $this->getEntityManager()->getConnection()->executeStatement(
+                'INSERT INTO score (id, evaluation_item_id, criterion_id, value, outcome, error_code, source, scored_by_id, updated_at) VALUES '
+                .implode(', ', array_fill(0, \count($chunk), "(?, ?, ?, ?, ?, ?, 'automatic', NULL, NOW())"))
+                .' ON CONFLICT (evaluation_item_id, criterion_id) DO UPDATE SET value = EXCLUDED.value, outcome = EXCLUDED.outcome,
+                    error_code = EXCLUDED.error_code, source = EXCLUDED.source, scored_by_id = NULL, updated_at = EXCLUDED.updated_at',
+                array_merge(...array_map(
+                    static fn (array $score): array => [Uuid::v7()->toRfc4122(), $score[0], $score[1], $score[2], null === $score[3] ? 'scored' : 'check_error', $score[3]],
+                    $chunk,
+                )),
+            );
+        }
+    }
+
+    /**
      * @return list<Score> with who scored them
      */
     public function forItem(EvaluationItem $item): array
