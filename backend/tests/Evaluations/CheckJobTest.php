@@ -27,6 +27,8 @@ use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\SendMessageToTransportsEvent;
+use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
@@ -133,7 +135,7 @@ final class CheckJobTest extends ApiTestCase
         self::assertCount(6, self::automaticScores($evaluationId));
     }
 
-    public function testAnExceptionLeavesTheJobFailedWithItsErrorCode(): void
+    public function testAnExceptionGoesBackToMessengerWithTheJobStillActive(): void
     {
         [, $jobId] = self::evaluationWithJob();
         // Parameters that a saved rubric never has: the check throws.
@@ -141,11 +143,64 @@ final class CheckJobTest extends ApiTestCase
 
         try {
             self::handle($jobId);
-            self::fail('The exception goes back to Messenger, which retries the message');
+            self::fail('The exception goes back to Messenger, which tries the message again');
         } catch (\UnexpectedValueException) {
         }
 
+        self::assertSame(['running', 0, 3, null], self::job($jobId));
+    }
+
+    /**
+     * What the worker does when the handler throws, through Messenger's own listeners: the retry listener decides, then
+     * the job follows. 3 retries are configured, so the 4th failure is the last.
+     */
+    public function testBetweenTriesTheJobIsQueuedAgainAndAfterTheLastOneItHasFailed(): void
+    {
+        [, $jobId] = self::evaluationWithJob();
+        $running = static fn () => self::connection()->executeStatement("UPDATE check_job SET status = 'running' WHERE id = ?", [$jobId]);
+        $fail = static function (int $retries) use ($jobId): WorkerMessageFailedEvent {
+            $envelope = new Envelope(new RunAutomaticChecks($jobId), 0 === $retries ? [] : [new RedeliveryStamp($retries)]);
+            $event = new WorkerMessageFailedEvent($envelope, 'async', new \RuntimeException('The database went away'));
+            $dispatcher = self::getContainer()->get('event_dispatcher');
+            self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+            $dispatcher->dispatch($event);
+
+            return $event;
+        };
+
+        $running();
+        self::assertTrue($fail(0)->willRetry());
+        self::assertSame(['queued', 0, 3, null], self::job($jobId));
+        self::assertEquals([new RunAutomaticChecks($jobId)], self::sentMessages(), 'Sent again, for the retry');
+
+        $running();
+        self::assertTrue($fail(2)->willRetry());
+        self::assertSame(['queued', 0, 3, null], self::job($jobId));
+
+        $running();
+        self::assertFalse($fail(3)->willRetry());
         self::assertSame(['failed', 0, 3, 'unexpected_error'], self::job($jobId));
+    }
+
+    /** Closing is final, so the scores stop changing: not while a job is queued or running; a failed one does not stop it. */
+    public function testAnEvaluationClosesOnlyOnceItsChecksAreNoLongerActive(): void
+    {
+        [$client, $fixture, $path] = self::signedInOwner();
+        [$evaluationId, $jobId] = self::evaluationWithJob($fixture['project']);
+        $close = static fn () => self::requestJson($client, 'POST', "$path/evaluations/$evaluationId/close");
+
+        self::assertProblem($close(), 409, 'check_job_running');
+        self::connection()->executeStatement("UPDATE check_job SET status = 'running' WHERE id = ?", [$jobId]);
+        self::assertProblem($close(), 409, 'check_job_running');
+        self::connection()->executeStatement("UPDATE check_job SET status = 'failed', error_code = 'unexpected_error' WHERE id = ?", [$jobId]);
+        $response = $close();
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame('closed', self::json($response)['status']);
+
+        // The failed job retried later from the failed transport changes nothing: the evaluation is closed.
+        self::handle($jobId);
+        self::assertSame(['failed', 0, 3, 'unexpected_error'], self::job($jobId));
+        self::assertSame([], self::automaticScores($evaluationId));
     }
 
     public function testAMessageForAnOlderOrDeletedJobDoesNothing(): void

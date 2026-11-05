@@ -49,7 +49,7 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 | 403 | `forbidden` (a member without the needed role), `csrf_failed` |
 | 404 | `not_found` (also: a project you are not a member of, and any path that does not exist, `/api` included) |
 | 405 | `method_not_allowed` |
-| 409 | `project_archived` (any write to an archived project except restore), `last_owner`, `rubric_locked` (an edit of a rubric that an evaluation uses), `evaluation_closed` (scoring, closing or re-checking a closed evaluation), `check_job_running` (running the automatic checks while they run), `in_use` (deleting a dataset, run or rubric that an evaluation uses; see [Deleting what an evaluation uses](#deleting-what-an-evaluation-uses)) |
+| 409 | `project_archived` (any write to an archived project except restore), `last_owner`, `rubric_locked` (an edit of a rubric that an evaluation uses), `evaluation_closed` (scoring, closing or re-checking a closed evaluation), `check_job_running` (running the automatic checks again, or closing the evaluation, while they are queued or running), `in_use` (deleting a dataset, run or rubric that an evaluation uses; see [Deleting what an evaluation uses](#deleting-what-an-evaluation-uses)) |
 | 413 | `payload_too_large` (body over 6 MiB, or an import file over 5 MiB); always Problem Details, also over 8 MiB, where the web server answers |
 | 415 | `unsupported_media_type` (a body that is not `application/json`, or none where one is needed; for uploads, not `multipart/form-data`) |
 | 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `invalid_characters` (a value that is not valid UTF-8, in a form field or a query), `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken`, `label_taken`, `not_found` (a dataset version that is not the project's), `required` (a missing upload), `is_null` (a value that must be sent), for rubrics `too_few`, `too_many`, `not_allowed`, `invalid_regex` and `max_below_min`, and for evaluations `duplicate_run`, `other_dataset_version` and `not_manual` |
@@ -434,7 +434,8 @@ of those runs: the items are what people score. Members read evaluations; owners
   run that does not answer a case has no item for it.
 - **Progress** counts manual scores only: `total` is items × manual criteria. Automatic checks report through the
   check job.
-- **Closing is final:** a closed evaluation is never reopened and takes no more scores or comments.
+- **Closing is final:** a closed evaluation is never reopened and takes no more scores or comments. So it waits for
+  the automatic checks: while a check job is queued or running, closing answers `409 check_job_running`.
 
 An evaluation:
 
@@ -466,7 +467,7 @@ automatic criteria.
 | `GET P/evaluations` | member | `200`, a list, newest first. |
 | `POST P/evaluations` | owner | `201` with the evaluation. Body below. |
 | `GET P/evaluations/{evaluationId}` | member | `200` with the evaluation. Never answers. |
-| `POST P/evaluations/{evaluationId}/close` | owner | `200` with the evaluation (`status: closed`, `closedAt` set). Closing a closed one answers `409 evaluation_closed`. |
+| `POST P/evaluations/{evaluationId}/close` | owner | `200` with the evaluation (`status: closed`, `closedAt` set). Closing a closed one answers `409 evaluation_closed`; while the latest check job is `queued` or `running`, `409 check_job_running` (a `failed` one does not stop it). |
 | `POST P/evaluations/{evaluationId}/automatic-checks` | owner | `202` with the evaluation: the automatic checks run again. See [Automatic checks](#automatic-checks). |
 | `DELETE P/evaluations/{evaluationId}` | owner | `204`; its items, scores, comments and check jobs go too. The rubric stays locked. |
 
@@ -493,8 +494,10 @@ A **check job** runs every automatic criterion of the rubric on every item, in t
   - `POST P/evaluations/{evaluationId}/automatic-checks` runs the checks again.
 - **`checkJob` in the evaluation** is the latest job: `status` goes `queued` → `running` → `succeeded`, or `failed`.
   `processed` of `total` items are done, updated every 500 items, so the evaluation page can poll it.
-- **A job that fails** has `errorCode: "unexpected_error"`. The worker tries it 3 more times, with a growing delay;
-  each try starts it again, so it can still end as `succeeded`. After that, running the checks again is the way out.
+- **When a try fails,** the worker tries the job 3 more times, with a growing delay (1, 2 and 4 s). Between tries the
+  job is `queued` again, and each try starts it from the beginning, so it can still end as `succeeded`. Only after
+  the last try is it `failed`, with `errorCode: "unexpected_error"` (the details are in the worker's log). Running
+  the checks again is then the way out.
 - **Results:** each check stores, for each item and automatic criterion, a score with `source: automatic` and no
   scorer:
   - `value` 1 (passes) or 0 (fails), with `outcome: scored`;

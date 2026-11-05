@@ -14,15 +14,14 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * each batch with its scores and the job's progress in one transaction. The scores are upserts, so running a job again
  * (a retry, a message delivered twice, a worker stopped half-way) gives the same rows.
  *
- * The job goes queued → running → succeeded. An exception leaves it failed with error_code unexpected_error and goes back
- * to Messenger, which retries the message 3 times and then keeps it in the failed transport; a retry starts the job
- * again.
+ * The job goes queued → running → succeeded. An exception goes back to Messenger, which tries the message 3 more times
+ * and then keeps it in the failed transport: MarkFailedCheckJobs puts the job back to queued between tries, and sets it
+ * failed after the last one. Each try starts the job again.
  */
 #[AsMessageHandler]
 final class RunAutomaticChecksHandler
 {
     public const BATCH = 500;
-    public const UNEXPECTED_ERROR = 'unexpected_error';
 
     public function __construct(
         private readonly Connection $connection,
@@ -34,28 +33,20 @@ final class RunAutomaticChecksHandler
     public function __invoke(RunAutomaticChecks $message): void
     {
         $job = $this->connection->fetchAssociative(
-            'SELECT j.evaluation_id, j.status, e.rubric_id,
+            'SELECT j.evaluation_id, j.status, e.rubric_id, e.status AS evaluation_status,
                 j.id = (SELECT l.id FROM check_job l WHERE l.evaluation_id = j.evaluation_id ORDER BY l.created_at DESC, l.id DESC LIMIT 1) AS latest
             FROM check_job j JOIN evaluation e ON e.id = j.evaluation_id WHERE j.id = ?',
             [$message->jobId],
         );
-        // Deleted with its evaluation, already done by an earlier delivery, or replaced by a newer job: nothing to do.
-        if (false === $job || 'succeeded' === $job['status'] || true !== $job['latest']) {
+        // Deleted with its evaluation, already done by an earlier delivery, replaced by a newer job, or (a failed job retried
+        // from the failed transport) of an evaluation closed since: closing is final, so nothing to do.
+        if (false === $job || 'succeeded' === $job['status'] || true !== $job['latest'] || 'closed' === $job['evaluation_status']) {
             return;
         }
 
         $this->connection->executeStatement("UPDATE check_job SET status = 'running', processed = 0, error_code = NULL WHERE id = ?", [$message->jobId]);
-        try {
-            $processed = $this->check((string) $job['evaluation_id'], $this->criteria((string) $job['rubric_id']), $message->jobId);
-            $this->connection->executeStatement("UPDATE check_job SET status = 'succeeded', processed = ? WHERE id = ?", [$processed, $message->jobId]);
-        } catch (\Throwable $exception) {
-            try {
-                $this->connection->executeStatement("UPDATE check_job SET status = 'failed', error_code = ? WHERE id = ?", [self::UNEXPECTED_ERROR, $message->jobId]);
-            } catch (\Throwable) {
-                // The database is the problem: the job stays running, and Messenger's retry starts it again.
-            }
-            throw $exception;
-        }
+        $processed = $this->check((string) $job['evaluation_id'], $this->criteria((string) $job['rubric_id']), $message->jobId);
+        $this->connection->executeStatement("UPDATE check_job SET status = 'succeeded', processed = ? WHERE id = ?", [$processed, $message->jobId]);
     }
 
     /**

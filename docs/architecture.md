@@ -451,15 +451,23 @@ page or a stack trace.
   - **Dispatch happens after the commit**, so the worker always finds the job, whatever the transport. If it fails,
     the job stays `queued`: `POST …/automatic-checks` on a queued job dispatches it again instead of creating
     another. A running job answers `409 check_job_running`; a closed evaluation, `409 evaluation_closed`.
+  - **Closing waits for the checks:** `POST …/close` answers `409 check_job_running` while the latest job is queued
+    or running (a failed one does not stop it), so the scores of a closed evaluation never change. Close and re-run
+    lock the evaluation row (`FOR UPDATE`), so neither slips past the other.
 - The handler (`RunAutomaticChecksHandler`) processes items in batches of 500 and upserts automatic scores, so a retry
   or re-run is idempotent. Each batch commits its scores with `processed/total`, which the evaluation page polls every
   5 s at most.
-  - It skips a message whose job is gone (its evaluation was deleted), already `succeeded`, or no longer the latest.
-  - An exception sets the job `failed` with `error_code = unexpected_error`, and Messenger retries the message; a
-    retry runs the job from the start.
+  - It skips a message whose job is gone (its evaluation was deleted), already `succeeded`, no longer the latest, or
+    of a closed evaluation (a failed job retried from the failed transport).
+  - An exception goes back to Messenger, which retries the message 3 times. `MarkFailedCheckJobs`, a
+    `WorkerMessageFailedEvent` listener that runs after Messenger's retry listener, puts the job back to `queued`
+    between tries and sets it `failed` with `error_code = unexpected_error` only after the last one. A retry runs the
+    job from the start.
   - A worker stopped half-way (a container restart) leaves its message unacknowledged: the Doctrine transport
     delivers it again after `redeliver_timeout`, 5 minutes here instead of the default hour, and the job runs again.
-    Messages that were only queued wait in the table.
+    Messages that were only queued wait in the table. A redelivery would be harmless even while the first worker were
+    still running it: a whole job takes about 10 s at the MVP limits, far below the 5 minutes, and every score is an
+    upsert, so two runs of a job give the same rows.
 - The checks are pure functions over (answer, reference, params), in `App\Evaluations\Checks\Checks`: exact match,
   contains, does not contain, regex, length limits and valid JSON.
   - `exact_match` on a case without a reference gives `outcome = check_error`, `error_code = missing_reference` and

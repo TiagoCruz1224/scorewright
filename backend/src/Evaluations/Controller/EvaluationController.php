@@ -154,17 +154,26 @@ final class EvaluationController
         return new JsonResponse($this->detailsJson($this->findEvaluation($projectAccess, $evaluationId)));
     }
 
-    /** Closing is final (§12, decision 1): closing again answers 409 evaluation_closed too. */
+    /**
+     * Closing is final (§12, decision 1), so the scores stop changing: closing again answers 409 evaluation_closed, and
+     * so does closing while a check job is queued or running (409 check_job_running). A failed job does not stop it.
+     */
     #[Route('/api/projects/{projectId}/evaluations/{evaluationId}/close', name: 'evaluation_close', methods: ['POST'], requirements: self::EVALUATION)]
     #[IsGranted(ProjectVoter::MANAGE, 'projectAccess')]
     public function close(ProjectAccess $projectAccess, string $evaluationId): JsonResponse
     {
         $evaluation = $this->findEvaluation($projectAccess, $evaluationId);
-        if ($evaluation->isClosed()) {
-            throw self::closed();
-        }
-        $evaluation->close();
-        $this->entityManager->flush();
+        $this->entityManager->wrapInTransaction(function () use ($evaluation): void {
+            // FOR UPDATE pairs with runAutomaticChecks: a re-run queues its job before this, or sees the evaluation closed.
+            $this->entityManager->refresh($evaluation, LockMode::PESSIMISTIC_WRITE);
+            if ($evaluation->isClosed()) {
+                throw self::closed();
+            }
+            if ($this->hasActiveCheckJob($evaluation)) {
+                throw self::checkJobRunning();
+            }
+            $evaluation->close();
+        });
 
         return new JsonResponse($this->detailsJson($evaluation));
     }
@@ -180,25 +189,30 @@ final class EvaluationController
     public function runAutomaticChecks(ProjectAccess $projectAccess, string $evaluationId): JsonResponse
     {
         $evaluation = $this->findEvaluation($projectAccess, $evaluationId);
-        if ($evaluation->isClosed()) {
-            throw self::closed();
-        }
         if (!self::hasAutomaticCriteria($evaluation->getRubric())) {
             throw new ApiProblem(422, 'no_automatic_criteria', 'The rubric of this evaluation has no automatic criteria to check');
         }
 
-        $job = $this->evaluations->latestCheckJob($evaluation);
-        if (CheckJobStatus::Running === $job?->getStatus()) {
-            throw self::checkJobRunning();
-        }
-        if (null === $job || CheckJobStatus::Queued !== $job->getStatus()) {
-            $job = new CheckJob($evaluation, $this->items->count(['evaluation' => $evaluation]));
-            $this->entityManager->persist($job);
-            try {
-                $this->entityManager->flush();
-            } catch (UniqueConstraintViolationException) {
-                throw self::checkJobRunning(); // queued by a concurrent request
-            }
+        try {
+            $job = $this->entityManager->wrapInTransaction(function () use ($evaluation): CheckJob {
+                // FOR UPDATE pairs with close: no job is queued once the evaluation is closed.
+                $this->entityManager->refresh($evaluation, LockMode::PESSIMISTIC_WRITE);
+                if ($evaluation->isClosed()) {
+                    throw self::closed();
+                }
+                $job = $this->evaluations->latestCheckJob($evaluation);
+                if (CheckJobStatus::Running === $job?->getStatus()) {
+                    throw self::checkJobRunning();
+                }
+                if (null === $job || CheckJobStatus::Queued !== $job->getStatus()) {
+                    $job = new CheckJob($evaluation, $this->items->count(['evaluation' => $evaluation]));
+                    $this->entityManager->persist($job);
+                }
+
+                return $job;
+            });
+        } catch (UniqueConstraintViolationException) {
+            throw self::checkJobRunning(); // queued by a concurrent request
         }
         $this->dispatch($job);
 
@@ -233,7 +247,12 @@ final class EvaluationController
 
     private static function checkJobRunning(): ApiProblem
     {
-        return new ApiProblem(409, 'check_job_running', 'The automatic checks are already running for this evaluation. Wait for them to finish');
+        return new ApiProblem(409, 'check_job_running', 'The automatic checks of this evaluation are queued or running. Wait for them to finish');
+    }
+
+    private function hasActiveCheckJob(Evaluation $evaluation): bool
+    {
+        return \in_array($this->evaluations->latestCheckJob($evaluation)?->getStatus(), [CheckJobStatus::Queued, CheckJobStatus::Running], true);
     }
 
     private function findEvaluation(ProjectAccess $projectAccess, string $evaluationId): Evaluation
