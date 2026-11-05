@@ -1,16 +1,19 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { ME, page, project, renderApp } from '../test-utils.jsx';
+import { evaluation, ME, page, project, renderApp } from '../test-utils.jsx';
 
 const members = page([
   { userId: 'u1', email: 'ana@example.com', displayName: 'Ana', role: 'owner' },
   { userId: 'u2', email: 'bo@example.com', displayName: 'Bo', role: 'viewer' },
 ]);
 
+const noEvaluations = { ...page([]), perPage: 5 };
+
 /** The app at `path`, signed in as Ana, with the project answering `fields` (role and archive state). */
-const renderPage = (path, fields) =>
+const renderPage = (path, fields, evaluations = noEvaluations) =>
   renderApp(path, {
+    '/api/projects/p1/evaluations?perPage=5': evaluations,
     '/api/me': ME,
     '/api/projects/p1': project(fields),
     '/api/projects/p1/members?page=1': members,
@@ -56,18 +59,39 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
     screen.getByText('Reads the project and its results.');
   });
 
-  it('gives an evaluator their role card on its own, not beside an empty column (SWD2b)', async () => {
-    await renderPage('/projects/p1', { role: 'evaluator' });
+  it('gives an evaluator their evaluations to score, beside their role card (canvas: Overview, evaluator)', async () => {
+    const closed = evaluation({ id: 'e2', name: 'Pilot', status: 'closed', closedAt: '2026-11-04T10:00:00+00:00', blind: false });
+    await renderPage('/projects/p1', { role: 'evaluator' }, { ...page([evaluation(), closed]), perPage: 5 });
+
+    const yours = within(screen.getByRole('heading', { name: 'Your evaluations' }).closest('section'));
+    const rows = yours.getAllByRole('listitem');
+    expect(rows[0].textContent).toContain('1 of 4 answers scored');
+    expect(within(rows[0]).getByRole('link', { name: 'Continue scoring' }).getAttribute('href')).toBe('/projects/p1/evaluations/e1/score');
+    // Closed: nothing to score, and its results come with their screens.
+    expect(within(rows[1]).queryByRole('link', { name: /scoring/ })).toBeNull();
+    expect(rows[1].textContent).toContain('Closed');
+    yours.getByText('Results of a blind evaluation unlock when the owner closes it.');
 
     const card = screen.getByRole('complementary', { name: 'Your role' });
-    within(card).getByText('Evaluator');
     within(card).getByText('Scores and comments on the answers in evaluations.');
     within(card).getByText('You can read the datasets, runs and rubrics. The owner imports them and manages the project.');
     expect(within(card).queryByRole('link', { name: 'Manage members' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Next steps' })).toBeNull();
-    // A card of at most 480 px at the start of the page, as in the canvas, not the right column of .grid-main.
-    expect(card.closest('.grid-main')).toBeNull();
-    expect(card.classList.contains('max-w-[480px]')).toBe(true);
+    expect(card.parentElement.classList.contains('grid-main')).toBe(true);
+  });
+
+  it('shows the owner and the viewer the latest evaluations, with progress and state in words', async () => {
+    await renderPage('/projects/p1', { role: 'viewer' }, { ...page([evaluation()]), total: 7, perPage: 5 });
+
+    const latest = within(screen.getByRole('heading', { name: 'Latest evaluations' }).closest('section'));
+    expect(latest.getByRole('link', { name: 'All evaluations' }).getAttribute('href')).toBe('/projects/p1/evaluations');
+    const row = latest.getAllByRole('listitem')[0];
+    expect(within(row).getByRole('link', { name: 'Weekly check' }).getAttribute('href')).toBe('/projects/p1/evaluations/e1');
+    expect(row.textContent).toContain('Support cases v2 · Support quality · Blind mode');
+    expect(row.textContent).toContain('1 of 4 answers scored');
+    within(row).getByText('Open');
+    // A viewer does not score.
+    expect(within(row).queryByRole('link', { name: /scoring/ })).toBeNull();
   });
 
   it('shows an archived project read-only, even to its owner', async () => {
@@ -87,6 +111,7 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
       '/api/projects/p1/datasets?perPage=1': one,
       '/api/projects/p1/runs?perPage=1': { ...page([]), perPage: 1 },
       '/api/projects/p1/rubrics?perPage=1': one,
+      '/api/projects/p1/evaluations?perPage=5': noEvaluations,
     });
 
     const card = screen.getByRole('heading', { name: 'Next steps' }).closest('section');
@@ -96,12 +121,13 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
       ['', 'Import a datasetDone'],
       ['2', '2Import runsNext'],
       ['', 'Create a rubricDone'],
+      ['4', '4Start an evaluation'],
     ]);
-    within(card).getByText('2 of 3 done');
-    expect(steps.map((step) => within(step).queryByRole('link')?.getAttribute('href') ?? null)).toEqual([null, '/projects/p1/runs/new', null]);
+    within(card).getByText('2 of 4 done');
+    expect(steps.map((step) => within(step).queryByRole('link')?.getAttribute('href') ?? null)).toEqual([null, '/projects/p1/runs/new', null, '/projects/p1/evaluations/new']);
   });
 
-  it('starts the owner’s next steps with importing a dataset, then runs, then a rubric', async () => {
+  it('starts the owner’s next steps with importing a dataset, then runs, a rubric and an evaluation', async () => {
     await renderPage('/projects/p1', { role: 'owner' });
 
     const steps = within(screen.getByRole('heading', { name: 'Next steps' }).closest('section'));
@@ -109,6 +135,7 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
       ['Import a dataset', '/projects/p1/datasets/new'],
       ['Import runs', '/projects/p1/runs/new'],
       ['Create a rubric', '/projects/p1/rubrics/new'],
+      ['Start an evaluation', '/projects/p1/evaluations/new'],
     ]);
     // Beside the steps: the owner's role card, with what owners do and the way to the members.
     const card = screen.getByRole('complementary', { name: 'Your role' });

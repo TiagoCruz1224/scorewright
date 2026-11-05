@@ -63,42 +63,84 @@ final class EvaluationRepository extends ServiceEntityRepository
     }
 
     /**
-     * Manual scores only (architecture §5): total = items × manual criteria; automatic checks report through the check
-     * job.
+     * Manual scores only (architecture §5); automatic checks report through the check job.
+     * - progress: scores given, of items × manual criteria;
+     * - answers: the items with every manual score, of all the items ("296 of 424 answers scored"). Without manual
+     *   criteria every answer has them all.
+     * By evaluation id.
      *
      * @param list<Evaluation> $evaluations
      *
-     * @return array<string, array{scored: int, total: int}> by evaluation id
+     * @return array<string, array{progress: array{scored: int, total: int}, answers: array{scored: int, total: int}}>
      */
     public function progress(array $evaluations): array
     {
         if ([] === $evaluations) {
             return [];
         }
+        // The scores of the manual criteria only, through score (criterion_id): an evaluation at the MVP limits also has
+        // up to 25,000 × 30 automatic ones, which the counts must not read (about 10 ms instead of 850).
         $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
-            "SELECT e.id,
-                (SELECT COUNT(*) FROM evaluation_item i WHERE i.evaluation_id = e.id)
-                    * (SELECT COUNT(*) FROM criterion c WHERE c.rubric_id = e.rubric_id AND c.kind <> 'automatic') AS total,
-                (SELECT COUNT(*) FROM score s JOIN evaluation_item i ON i.id = s.evaluation_item_id
-                    WHERE i.evaluation_id = e.id AND s.source = 'manual') AS scored
-            FROM evaluation e WHERE e.id IN (?)",
+            "SELECT e.id, items.n AS items, manual.n AS manual, scored.n AS scored,
+                CASE WHEN manual.n = 0 THEN items.n ELSE scored.answers END AS answers_scored
+            FROM evaluation e
+            CROSS JOIN LATERAL (SELECT COUNT(*) AS n FROM evaluation_item i WHERE i.evaluation_id = e.id) items
+            CROSS JOIN LATERAL (SELECT COUNT(*) AS n FROM criterion c WHERE c.rubric_id = e.rubric_id AND c.kind <> 'automatic') manual
+            CROSS JOIN LATERAL (
+                SELECT COALESCE(SUM(per_item.n), 0) AS n, COUNT(*) FILTER (WHERE per_item.n >= manual.n) AS answers
+                FROM (
+                    SELECT COUNT(*) AS n FROM criterion c
+                    JOIN score s ON s.criterion_id = c.id
+                    JOIN evaluation_item i ON i.id = s.evaluation_item_id
+                    WHERE c.rubric_id = e.rubric_id AND c.kind <> 'automatic' AND i.evaluation_id = e.id
+                    GROUP BY s.evaluation_item_id
+                ) per_item
+            ) scored
+            WHERE e.id IN (?)",
             [array_map(static fn (Evaluation $evaluation): string => $evaluation->getId()->toRfc4122(), $evaluations)],
             [ArrayParameterType::STRING],
         );
         $progress = [];
         foreach ($rows as $row) {
-            $progress[(string) $row['id']] = ['scored' => (int) $row['scored'], 'total' => (int) $row['total']];
+            $progress[(string) $row['id']] = [
+                'progress' => ['scored' => (int) $row['scored'], 'total' => (int) $row['items'] * (int) $row['manual']],
+                'answers' => ['scored' => (int) $row['answers_scored'], 'total' => (int) $row['items']],
+            ];
         }
 
         return $progress;
     }
 
     /**
-     * @return list<EvaluationRun> by letter
+     * The scores of each criterion in the evaluation, manual or automatic, check errors included ("Progress by
+     * criterion").
+     *
+     * @return array<string, int> by criterion id
      */
-    public function runs(Evaluation $evaluation): array
+    public function scoresByCriterion(Evaluation $evaluation): array
     {
-        return $this->getEntityManager()->getRepository(EvaluationRun::class)->findBy(['evaluation' => $evaluation], ['letter' => 'ASC']);
+        /** @var array<string, int|string> $counts */
+        $counts = $this->getEntityManager()->getConnection()->fetchAllKeyValue(
+            'SELECT s.criterion_id, COUNT(*) FROM score s JOIN evaluation_item i ON i.id = s.evaluation_item_id WHERE i.evaluation_id = ? GROUP BY s.criterion_id',
+            [$evaluation->getId()->toRfc4122()],
+        );
+
+        return array_map(intval(...), $counts);
+    }
+
+    /**
+     * @param list<Evaluation> $evaluations
+     *
+     * @return array<string, list<EvaluationRun>> by evaluation id, each by letter
+     */
+    public function runs(array $evaluations): array
+    {
+        $runs = [];
+        foreach ($this->getEntityManager()->getRepository(EvaluationRun::class)->findBy(['evaluation' => $evaluations], ['letter' => 'ASC']) as $entry) {
+            $runs[$entry->getEvaluation()->getId()->toRfc4122()][] = $entry;
+        }
+
+        return $runs;
     }
 
     /** created_at keeps whole seconds: within one, the time-ordered v7 id tells the newer job. */

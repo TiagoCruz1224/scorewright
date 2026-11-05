@@ -22,6 +22,7 @@ use App\Users\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Requirement\Requirement;
@@ -47,14 +48,19 @@ final class ScoringController
     ) {
     }
 
-    /** The first item that lacks a manual score; 204 when none does, or when the rubric has no manual criteria. */
+    /**
+     * The first item that lacks a manual score; with ?after={itemId}, the first after that item, else from the start
+     * again ("Next with missing scores"). 204 when none does, or when the rubric has no manual criteria.
+     */
     #[Route('/api/projects/{projectId}/evaluations/{evaluationId}/items/next', name: 'evaluation_item_next', methods: ['GET'], requirements: self::EVALUATION)]
     #[IsGranted(EvaluationVoter::SCORE, 'projectAccess')]
-    public function next(ProjectAccess $projectAccess, string $evaluationId): Response
+    public function next(ProjectAccess $projectAccess, string $evaluationId, #[MapQueryParameter] ?string $after = null): Response
     {
         $evaluation = $this->openEvaluation($projectAccess, $evaluationId);
+        // An item of another evaluation, an unknown one or not an id: 404, like an item that does not exist.
+        $afterItem = null === $after ? null : (Uuid::isValid($after) ? $this->findItem($evaluation, $after) : throw new ApiProblem(404, 'not_found', 'Not Found'));
         $manual = \count(self::manualCriteria($evaluation));
-        $item = 0 === $manual ? null : $this->items->nextToScore($evaluation, $manual);
+        $item = 0 === $manual ? null : $this->items->nextToScore($evaluation, $manual, $afterItem);
 
         return null === $item ? new Response(null, Response::HTTP_NO_CONTENT) : new JsonResponse($this->itemJson($item));
     }
@@ -148,9 +154,15 @@ final class ScoringController
         $person = static fn (?User $user): ?array => null === $user ? null : ['id' => $user->getId()->toRfc4122(), 'displayName' => $user->getDisplayName()];
         $utc = static fn (\DateTimeImmutable $time): string => $time->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM);
 
+        $place = $this->items->placeOf($item);
         $json = [
             'id' => $item->getId()->toRfc4122(),
-            'case' => ['key' => $case->getCaseKey(), 'input' => $case->getInput(), 'reference' => $case->getReference()],
+            // 1-based, in the evaluation's order; "K" goes to the previous item.
+            'position' => $item->getPosition() + 1,
+            'previousItemId' => $place['previous'],
+            'case' => ['key' => $case->getCaseKey(), 'tags' => $case->getTags(), 'input' => $case->getInput(), 'reference' => $case->getReference()],
+            // "Answer 2 of 2 for this case": in blind mode the answers of a case come in a random order.
+            'caseAnswer' => ['number' => $place['caseNumber'], 'count' => $place['caseCount']],
             'answer' => $answer->getOutput(),
         ];
         if (!$evaluation->isBlind()) {
@@ -178,7 +190,7 @@ final class ScoringController
                 'by' => $person($item->getCommentBy()),
                 'updatedAt' => null === $item->getCommentUpdatedAt() ? null : $utc($item->getCommentUpdatedAt()),
             ],
-            'progress' => $this->evaluations->progress([$evaluation])[$evaluation->getId()->toRfc4122()] ?? ['scored' => 0, 'total' => 0],
+            ...$this->evaluations->progress([$evaluation])[$evaluation->getId()->toRfc4122()],
         ];
     }
 }

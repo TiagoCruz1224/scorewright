@@ -38,7 +38,7 @@ final class EvaluationTest extends ApiTestCase
 
         self::assertSame(201, $created->getStatusCode(), (string) $created->getContent());
         $evaluation = self::json($created);
-        self::assertSame(['id', 'name', 'status', 'blind', 'datasetVersion', 'rubric', 'progress', 'createdAt', 'closedAt', 'runs', 'checkJob'], array_keys($evaluation));
+        self::assertSame(['id', 'name', 'status', 'blind', 'datasetVersion', 'rubric', 'progress', 'answers', 'createdAt', 'closedAt', 'runs', 'checkJob', 'criteria'], array_keys($evaluation));
         self::assertSame(['Weekly check', 'open', false, null], [$evaluation['name'], $evaluation['status'], $evaluation['blind'], $evaluation['closedAt']]);
         self::assertSame(['id' => $rubric->getId()->toRfc4122(), 'name' => 'Quality'], $evaluation['rubric']);
         self::assertSame([
@@ -47,12 +47,19 @@ final class EvaluationTest extends ApiTestCase
         ], $evaluation['runs']);
         // 5 items (3 + 2 answers) × 2 manual criteria: progress never counts the automatic one.
         self::assertSame(['scored' => 0, 'total' => 10], $evaluation['progress']);
+        self::assertSame(['scored' => 0, 'total' => 5], $evaluation['answers']);
         self::assertSame(['status' => 'queued', 'processed' => 0, 'total' => 5, 'errorCode' => null], $evaluation['checkJob']);
+        // "Progress by criterion": the scores given on each, in the rubric's order.
+        self::assertSame([['Tone', 'scale_1_5', null, 0], ['Correct', 'pass_fail', null, 0], ['Refund', 'automatic', 'contains', 0]], array_map(
+            static fn (array $criterion): array => [$criterion['name'], $criterion['kind'], $criterion['checkType'], $criterion['scored']],
+            $evaluation['criteria'],
+        ));
 
         $client->loginUser($fixture['viewer']);
         self::assertSame($evaluation, self::json(self::requestJson($client, 'GET', "$path/evaluations/{$evaluation['id']}")));
         $list = self::json(self::requestJson($client, 'GET', "$path/evaluations"));
-        self::assertSame([array_slice($evaluation, 0, 9)], $list['items']);
+        // A list has everything but the check job and the criteria: the runs too, for the Runs column.
+        self::assertSame([array_slice($evaluation, 0, 11)], $list['items']);
     }
 
     /** Architecture §11, slice 9: the lock end to end. */
@@ -185,8 +192,21 @@ final class EvaluationTest extends ApiTestCase
                 self::assertStringNotContainsString($secret, (string) $response->getContent());
             }
             self::assertSame([], array_intersect(self::keys(self::json($response)), ['run', 'runId', 'letter', 'label', 'answerId']));
-            self::assertSame(['id', 'case', 'answer', 'criteria', 'scores', 'comment', 'progress'], array_keys(self::json($response)));
+            self::assertSame(['id', 'position', 'previousItemId', 'case', 'caseAnswer', 'answer', 'criteria', 'scores', 'comment', 'progress', 'answers'], array_keys(self::json($response)));
         }
+
+        // Its place says nothing of the run either: the previous item is another random id, and the number within the
+        // case follows the shuffled order. Going back from the last item reaches the first, each item once.
+        $stored = self::storedItems($evaluation['id']);
+        $seen = [];
+        for ($id = $stored[\count($stored) - 1]['id']; null !== $id; $id = $place['previousItemId']) {
+            $place = self::json(self::requestJson($client, 'GET', "$base/$id"));
+            foreach ($secrets as $secret) {
+                self::assertStringNotContainsString($secret, json_encode($place, \JSON_THROW_ON_ERROR));
+            }
+            $seen[] = [$place['position'], $place['caseAnswer']];
+        }
+        self::assertSame([[4, ['number' => 2, 'count' => 2]], [3, ['number' => 1, 'count' => 2]], [2, ['number' => 2, 'count' => 2]], [1, ['number' => 1, 'count' => 2]]], $seen);
 
         // Not blind: the item says the letter and the label.
         $client->loginUser($fixture['owner']);
@@ -205,7 +225,9 @@ final class EvaluationTest extends ApiTestCase
         [$scale, $passFail] = array_map(static fn ($criterion): string => $criterion->getId()->toRfc4122(), $rubric->getCriteria());
 
         $first = self::json(self::requestJson($client, 'GET', "$base/next"));
-        self::assertSame(['c1', 'Input 1', 'Reference 1'], array_values($first['case']));
+        self::assertSame(['c1', [], 'Input 1', 'Reference 1'], array_values($first['case']));
+        self::assertSame([1, null, ['number' => 1, 'count' => 1]], [$first['position'], $first['previousItemId'], $first['caseAnswer']]);
+        self::assertSame(['scored' => 0, 'total' => 2], $first['answers']);
         self::assertSame('baseline answer to c1', $first['answer']);
         self::assertSame(['scale_1_5', 'pass_fail', 'automatic'], array_column($first['criteria'], 'kind'));
         self::assertSame(['scored' => 0, 'total' => 4], $first['progress']);
@@ -215,14 +237,47 @@ final class EvaluationTest extends ApiTestCase
         self::assertSame([[$scale, 4, 'scored', 'manual', 'Owner']], array_map(static fn (array $score): array => [$score['criterionId'], $score['value'], $score['outcome'], $score['source'], $score['scoredBy']['displayName']], $saved['scores']));
         self::assertSame($first['id'], self::json(self::requestJson($client, 'GET', "$base/next"))['id'], 'Still a manual score missing');
 
-        self::requestJson($client, 'PUT', "$base/{$first['id']}/scores/$passFail", ['value' => 1]);
+        $done = self::json(self::requestJson($client, 'PUT', "$base/{$first['id']}/scores/$passFail", ['value' => 1]));
+        self::assertSame(['scored' => 1, 'total' => 2], $done['answers'], 'Every manual score given: one answer scored');
         $second = self::json(self::requestJson($client, 'GET', "$base/next"));
         self::assertSame('c2', $second['case']['key']);
+        self::assertSame([2, $first['id']], [$second['position'], $second['previousItemId']]);
         self::requestJson($client, 'PUT', "$base/{$second['id']}/scores/$scale", ['value' => 2]);
         self::requestJson($client, 'PUT', "$base/{$second['id']}/scores/$passFail", ['value' => 0]);
 
         self::assertSame(204, self::requestJson($client, 'GET', "$base/next")->getStatusCode());
-        self::assertSame(['scored' => 4, 'total' => 4], self::json(self::requestJson($client, 'GET', "$path/evaluations/{$evaluation['id']}"))['progress']);
+        $read = self::json(self::requestJson($client, 'GET', "$path/evaluations/{$evaluation['id']}"));
+        self::assertSame([['scored' => 4, 'total' => 4], ['scored' => 2, 'total' => 2]], [$read['progress'], $read['answers']]);
+        self::assertSame([2, 2, 0], array_column($read['criteria'], 'scored'), 'The automatic one waits for its check job');
+    }
+
+    /** "Next with missing scores" (J): the first after the current answer, else from the start again, the current one last. */
+    public function testNextAfterAnItemGoesOnAndThenStartsAgain(): void
+    {
+        [$client, $fixture, $path] = self::signedInOwner();
+        $version = self::versionWithCases($fixture['project'], 4);
+        $rubric = self::rubric($fixture['project'], 'Quality', CriterionKind::PassFail);
+        $otherRun = self::runOf($version, 'other'); // before the first request, which reboots the kernel
+        $evaluation = self::json(self::create($client, $path, $version, [self::runOf($version, 'baseline')], $rubric));
+        $base = "$path/evaluations/{$evaluation['id']}/items";
+        $ids = array_column(self::storedItems($evaluation['id']), 'id');
+        $next = static fn (string $after): ?string => self::json(self::requestJson($client, 'GET', "$base/next?after=$after"))['id'] ?? null;
+        self::requestJson($client, 'PUT', "$base/{$ids[2]}/scores/".$rubric->getCriteria()[0]->getId(), ['value' => 1]);
+
+        self::assertSame($ids[1], $next($ids[0]), 'The one after, still unscored');
+        self::assertSame($ids[3], $next($ids[1]), 'Past a scored one');
+        self::assertSame($ids[0], $next($ids[3]), 'From the start again');
+        foreach ([0, 1, 3] as $index) {
+            self::requestJson($client, 'PUT', "$base/{$ids[$index]}/scores/".$rubric->getCriteria()[0]->getId(), ['value' => 0]);
+        }
+        self::assertSame(204, self::requestJson($client, 'GET', "$base/next?after={$ids[1]}")->getStatusCode());
+
+        // An item of another evaluation, an unknown one, or not an id: like an item that does not exist.
+        $other = self::json(self::create($client, $path, $version, [$otherRun], $rubric, ['name' => 'Other']));
+        $otherItem = self::storedItems($other['id'])[0]['id'];
+        foreach ([$otherItem, Uuid::v4()->toRfc4122(), 'nope'] as $after) {
+            self::assertProblem(self::requestJson($client, 'GET', "$base/next?after=$after"), 404, 'not_found');
+        }
     }
 
     public function testWithoutManualCriteriaThereIsNothingToScore(): void

@@ -94,19 +94,50 @@ final class EvaluationItemRepository extends ServiceEntityRepository
     }
 
     /**
-     * The first item by position that lacks a manual score for some manual criterion (architecture §5). It is per
-     * evaluation, not per evaluator: there is no locking between evaluators in the MVP.
+     * The first item by position that lacks a manual score for some manual criterion (architecture §5). After a given
+     * item ("Next with missing scores"), the first one after it, else from the start again, the given item last. It is
+     * per evaluation, not per evaluator: there is no locking between evaluators in the MVP.
      */
-    public function nextToScore(Evaluation $evaluation, int $manualCriteria): ?EvaluationItem
+    public function nextToScore(Evaluation $evaluation, int $manualCriteria, ?EvaluationItem $after = null): ?EvaluationItem
     {
+        // Each part walks the (evaluation_id, position) index and stops at its first match; the second runs only when the
+        // first finds none. Scores are counted on the (item, criterion) key, for the manual criteria only.
+        $missing = "(SELECT COUNT(*) FROM score s JOIN criterion c ON c.id = s.criterion_id
+            WHERE s.evaluation_item_id = i.id AND c.kind <> 'automatic') < :manual";
         $id = $this->getEntityManager()->getConnection()->fetchOne(
-            "SELECT i.id FROM evaluation_item i
-            WHERE i.evaluation_id = ?
-                AND (SELECT COUNT(*) FROM score s WHERE s.evaluation_item_id = i.id AND s.source = 'manual') < ?
-            ORDER BY i.position LIMIT 1",
-            [$evaluation->getId()->toRfc4122(), $manualCriteria],
+            "(SELECT i.id FROM evaluation_item i WHERE i.evaluation_id = :evaluation AND i.position > :after AND $missing ORDER BY i.position LIMIT 1)
+            UNION ALL
+            (SELECT i.id FROM evaluation_item i WHERE i.evaluation_id = :evaluation AND i.position <= :after AND $missing ORDER BY i.position LIMIT 1)
+            LIMIT 1",
+            ['evaluation' => $evaluation->getId()->toRfc4122(), 'manual' => $manualCriteria, 'after' => $after?->getPosition() ?? -1],
         );
 
         return \is_string($id) ? $this->findInEvaluation($evaluation, Uuid::fromString($id)) : null;
+    }
+
+    /**
+     * Where the item stands: the one before it in the evaluation's order, and which of its case's answers it is. In
+     * blind mode both say nothing of the run: the answers of a case are shuffled, and item ids are random.
+     *
+     * @return array{previous: string|null, caseNumber: int, caseCount: int}
+     */
+    public function placeOf(EvaluationItem $item): array
+    {
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            'SELECT
+                (SELECT p.id FROM evaluation_item p WHERE p.evaluation_id = i.evaluation_id AND p.position = i.position - 1) AS previous,
+                COUNT(*) AS case_count,
+                COUNT(*) FILTER (WHERE o.position <= i.position) AS case_number
+            FROM evaluation_item i
+            JOIN answer a ON a.id = i.answer_id
+            JOIN answer oa ON oa.test_case_id = a.test_case_id
+            JOIN evaluation_item o ON o.answer_id = oa.id AND o.evaluation_id = i.evaluation_id
+            WHERE i.id = ?
+            GROUP BY i.id, i.evaluation_id, i.position',
+            [$item->getId()->toRfc4122()],
+        );
+        \assert(\is_array($row));
+
+        return ['previous' => null === $row['previous'] ? null : (string) $row['previous'], 'caseNumber' => (int) $row['case_number'], 'caseCount' => (int) $row['case_count']];
     }
 }

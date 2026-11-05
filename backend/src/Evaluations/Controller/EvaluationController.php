@@ -11,6 +11,7 @@ use App\Evaluations\Checks\RunAutomaticChecks;
 use App\Evaluations\Dto\CreateEvaluationRequest;
 use App\Evaluations\Entity\CheckJob;
 use App\Evaluations\Entity\CheckJobStatus;
+use App\Evaluations\Entity\Criterion;
 use App\Evaluations\Entity\CriterionKind;
 use App\Evaluations\Entity\Evaluation;
 use App\Evaluations\Entity\EvaluationRun;
@@ -65,9 +66,10 @@ final class EvaluationController
     {
         $page = $this->evaluations->findPageInProject($projectAccess->project->getId(), $query->page, $query->perPage);
         $progress = $this->evaluations->progress($page['items']);
+        $runs = $this->evaluations->runs($page['items']);
 
         return new JsonResponse([
-            'items' => array_map(static fn (Evaluation $evaluation): array => self::evaluationJson($evaluation, $progress), $page['items']),
+            'items' => array_map(static fn (Evaluation $evaluation): array => self::evaluationJson($evaluation, $progress, $runs), $page['items']),
             'page' => $query->page,
             'perPage' => $query->perPage,
             'total' => $page['total'],
@@ -279,42 +281,54 @@ final class EvaluationController
     }
 
     /**
-     * The evaluation with its runs (letter and label, in blind mode too: no answer is tied to them here) and its check
-     * job. No answers (§5, "Run data and blind mode").
+     * The evaluation with its check job and the scores given on each criterion ("Progress by criterion"). No answers
+     * (§5, "Run data and blind mode").
      *
      * @return array<string, mixed>
      */
     private function detailsJson(Evaluation $evaluation): array
     {
         $job = $this->evaluations->latestCheckJob($evaluation);
+        $scored = $this->evaluations->scoresByCriterion($evaluation);
 
-        return self::evaluationJson($evaluation, $this->evaluations->progress([$evaluation])) + [
-            'runs' => array_map(static fn (EvaluationRun $entry): array => [
-                'letter' => $entry->getLetter(),
-                'id' => $entry->getRun()->getId()->toRfc4122(),
-                'label' => $entry->getRun()->getLabel(),
-            ], $this->evaluations->runs($evaluation)),
+        return self::evaluationJson($evaluation, $this->evaluations->progress([$evaluation]), $this->evaluations->runs([$evaluation])) + [
             'checkJob' => null === $job ? null : [
                 'status' => $job->getStatus()->value,
                 'processed' => $job->getProcessed(),
                 'total' => $job->getTotal(),
                 'errorCode' => $job->getErrorCode(),
             ],
+            'criteria' => array_map(static function (Criterion $criterion) use ($scored): array {
+                $data = $criterion->getData();
+
+                return [
+                    'id' => $criterion->getId()->toRfc4122(),
+                    'name' => $data->name,
+                    'kind' => $data->kind->value,
+                    'checkType' => $data->checkType?->value,
+                    'scored' => $scored[$criterion->getId()->toRfc4122()] ?? 0,
+                ];
+            }, $evaluation->getRubric()->getCriteria()),
         ];
     }
 
     /**
-     * @param array<string, array{scored: int, total: int}> $progress by evaluation id
+     * The evaluation as lists show it, with its runs: letter and label, in blind mode too, since no answer is tied to
+     * them here.
+     *
+     * @param array<string, array{progress: array{scored: int, total: int}, answers: array{scored: int, total: int}}> $progress by evaluation id
+     * @param array<string, list<EvaluationRun>>                                                                      $runs     by evaluation id
      *
      * @return array<string, mixed>
      */
-    private static function evaluationJson(Evaluation $evaluation, array $progress): array
+    private static function evaluationJson(Evaluation $evaluation, array $progress, array $runs): array
     {
+        $id = $evaluation->getId()->toRfc4122();
         $version = $evaluation->getDatasetVersion();
         $utc = static fn (?\DateTimeImmutable $time): ?string => $time?->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM);
 
         return [
-            'id' => $evaluation->getId()->toRfc4122(),
+            'id' => $id,
             'name' => $evaluation->getName(),
             'status' => $evaluation->getStatus()->value,
             'blind' => $evaluation->isBlind(),
@@ -324,9 +338,15 @@ final class EvaluationController
                 'dataset' => ['id' => $version->getDataset()->getId()->toRfc4122(), 'name' => $version->getDataset()->getName()],
             ],
             'rubric' => ['id' => $evaluation->getRubric()->getId()->toRfc4122(), 'name' => $evaluation->getRubric()->getName()],
-            'progress' => $progress[$evaluation->getId()->toRfc4122()] ?? ['scored' => 0, 'total' => 0],
+            'progress' => $progress[$id]['progress'] ?? ['scored' => 0, 'total' => 0],
+            'answers' => $progress[$id]['answers'] ?? ['scored' => 0, 'total' => 0],
             'createdAt' => $utc($evaluation->getCreatedAt()),
             'closedAt' => $utc($evaluation->getClosedAt()),
+            'runs' => array_map(static fn (EvaluationRun $entry): array => [
+                'letter' => $entry->getLetter(),
+                'id' => $entry->getRun()->getId()->toRfc4122(),
+                'label' => $entry->getRun()->getLabel(),
+            ], $runs[$id] ?? []),
         ];
     }
 }

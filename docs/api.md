@@ -355,6 +355,7 @@ A rubric:
   "id": "01a1ac2e-…",
   "name": "Support quality",
   "criterionCount": 4,
+  "automaticCount": 2,
   "lockedAt": null,
   "duplicatedFrom": null,
   "criteria": [
@@ -367,7 +368,7 @@ A rubric:
 ```
 
 - `duplicatedFrom` is `{"id", "name"}` of the rubric this one was copied from, or `null` (also when that one was
-  deleted). In a list, each rubric has only `id`, `name`, `criterionCount` and `lockedAt`.
+  deleted). In a list, each rubric has only `id`, `name`, `criterionCount`, `automaticCount` (its automatic criteria) and `lockedAt`.
 - The order of `criteria` is the rubric's order. A weight left empty (`null`) counts as 1 in the results; a whole
   weight comes back as a JSON integer (`2`, not `2.0`).
 
@@ -448,19 +449,31 @@ An evaluation:
   "datasetVersion": { "id": "01a1ab4c-…", "number": 2, "dataset": { "id": "01a1ab4c-…", "name": "Support cases" } },
   "rubric": { "id": "01a1ac2e-…", "name": "Support quality" },
   "progress": { "scored": 37, "total": 400 },
+  "answers": { "scored": 18, "total": 200 },
   "createdAt": "2026-11-05T13:00:00+00:00",
   "closedAt": null,
   "runs": [
     { "letter": "A", "id": "01a1ab5e-…", "label": "baseline-v1" },
     { "letter": "B", "id": "01a1ab6e-…", "label": "candidate-v2" }
   ],
-  "checkJob": { "status": "queued", "processed": 0, "total": 400, "errorCode": null }
+  "checkJob": { "status": "queued", "processed": 0, "total": 200, "errorCode": null },
+  "criteria": [
+    { "id": "01a1ac2e-…", "name": "Tone", "kind": "scale_1_5", "checkType": null, "scored": 20 },
+    { "id": "01a1ac2e-…", "name": "Correct", "kind": "pass_fail", "checkType": null, "scored": 17 },
+    { "id": "01a1ac2e-…", "name": "Mentions the order", "kind": "automatic", "checkType": "regex", "scored": 0 }
+  ]
 }
 ```
 
-`runs` lists the letters and labels in blind mode too: no answer here is tied to them, and the items never are (below).
-In a list, each evaluation has everything but `runs` and `checkJob`. `checkJob` is `null` when the rubric has no
-automatic criteria.
+- `progress` counts the manual scores given, of items × manual criteria; `answers` counts the answers (items) with
+  every manual score, of all the answers ("18 of 200 answers scored"). Without manual criteria every answer counts as
+  scored.
+- `criteria` is "Progress by criterion": the scores given on each criterion of the rubric, in its order; for an
+  automatic one, the answers its check has done, check errors included.
+- `runs` lists the letters and labels in blind mode too: no answer here is tied to them, and the items never are
+  (below).
+- In a list, each evaluation has everything but `checkJob` and `criteria`. `checkJob` is `null` when the rubric
+  has no automatic criteria.
 
 | Endpoint | Who | Answer |
 |---|---|---|
@@ -525,7 +538,7 @@ included, answers `409 evaluation_closed`.
 
 | Endpoint | Answer |
 |---|---|
-| `GET P/evaluations/{id}/items/next` | `200` with the first item, by position, that lacks a manual score for some manual criterion. `204` when every item has them all, or when the rubric has no manual criteria. |
+| `GET P/evaluations/{id}/items/next` | `200` with the first item, by position, that lacks a manual score for some manual criterion. With `?after={itemId}` ("Next with missing scores"), the first such item after that one, else from the start again, that one last; an item that is not the evaluation's answers `404`. `204` when every item has them all, or when the rubric has no manual criteria. |
 | `GET P/evaluations/{id}/items/{itemId}` | `200` with the item. |
 | `PUT P/evaluations/{id}/items/{itemId}/scores/{criterionId}` | `{"value": 4}`: 1 to 5 on a `scale_1_5` criterion, 1 (pass) or 0 (fail) on a `pass_fail` one (`not_in_range` otherwise). An automatic criterion answers `422 not_manual`: its result comes from its check. A criterion of another rubric is a `404`. `200` with the item. |
 | `PUT P/evaluations/{id}/items/{itemId}/comment` | `{"comment": "…"}`: up to 5,000 characters, line breaks allowed; an empty one clears it. One per answer, independent of the scores. `200` with the item. |
@@ -539,8 +552,11 @@ An item **in blind mode**: no run id, label or letter, and no answer id.
 ```json
 {
   "id": "6f1c2a0e-9d4b-4c1e-8a55-0b7e3f2d9c41",
-  "case": { "key": "refund-1", "input": "I want a refund.
+  "position": 38,
+  "previousItemId": "d2a7b9e4-1c3f-4a8e-9b60-5e2f7c1d8a93",
+  "case": { "key": "refund-1", "tags": ["billing"], "input": "I want a refund.
 My order is late.", "reference": "Apologise and confirm the refund." },
+  "caseAnswer": { "number": 2, "count": 2 },
   "answer": "Sorry about the delay. Your refund is on its way.",
   "criteria": [
     { "id": "01a1ac2e-…", "kind": "scale_1_5", "name": "Tone", "guidance": "1: rude or cold.
@@ -553,9 +569,17 @@ My order is late.", "reference": "Apologise and confirm the refund." },
       "scoredBy": { "id": "01a1ab3a-…", "displayName": "Bea" }, "updatedAt": "2026-11-05T13:10:00+00:00" }
   ],
   "comment": { "text": "Polite, but says nothing about the date.", "by": { "id": "01a1ab3a-…", "displayName": "Bea" }, "updatedAt": "2026-11-05T13:11:00+00:00" },
-  "progress": { "scored": 38, "total": 400 }
+  "progress": { "scored": 38, "total": 400 },
+  "answers": { "scored": 19, "total": 200 }
 }
 ```
+
+- `position` is the item's place in the evaluation's order, from 1 to `answers.total`, and `previousItemId` the item
+  before it (`null` for the first): "Previous answer" (K). `caseAnswer` says which of its case's answers it is
+  ("Answer 2 of 2 for this case").
+- None of them tells the run in blind mode: item ids are random, and the answers of a case come in a shuffled order.
+  The blind-mode test walks the items back through `previousItemId` and finds no run id, label or answer id.
+- `progress` and `answers` are the evaluation's, as above.
 
 The same item **not in blind mode** has one more field, after `answer`:
 

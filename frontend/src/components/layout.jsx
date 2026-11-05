@@ -123,6 +123,7 @@ function ProjectNav({ project }) {
     ['Datasets', `${base}/datasets`],
     ['Runs', `${base}/runs`],
     ['Rubrics', `${base}/rubrics`],
+    ['Evaluations', `${base}/evaluations`],
     ...(project.role === 'owner' ? [['Members', `${base}/members`], ['Settings', `${base}/settings`]] : []),
   ];
 

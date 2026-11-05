@@ -360,8 +360,8 @@
      with one get room below their last field, and focus scrolls clear of it even when it wraps to two lines at 320 px
      (about 110 px high; WCAG 2.4.11). */
   .savebar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--bg); }
-    .page:has(.savebar) { padding-bottom: 144px; }
-  html:has(.savebar) { scroll-padding-bottom: 128px; }
+    .page:has(.savebar, .scorebar) { padding-bottom: 144px; }
+  html:has(.savebar, .scorebar) { scroll-padding-bottom: 128px; }
 
   /* ---------- Phase 2: auth, overview, evaluations, scoring, results ---------- */
   .auth { max-width: 400px; margin: 72px auto 96px; padding: 0 16px; }
@@ -444,9 +444,12 @@
   /* Scoring */
   .score-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-bottom: 20px; }
   .score-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  /* The scoring screen is wider than other pages (canvas: Scoring, main.page max-width 1200px). */
+  .page:has(.score-wrap) { max-width: 1200px; }
   .score-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 28px; align-items: start; }
   .case-title { font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.015em; outline: none; }
-  .block { display: flex; flex-direction: column; gap: 8px; }
+  /* .case-block, not the design's .block: Tailwind's block utility (display: block) would win over it. */
+  .case-block { display: flex; flex-direction: column; gap: 8px; }
   .block-title { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--text-muted); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .textblock { margin: 0; white-space: pre-wrap; max-width: 75ch; padding: 12px 14px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); font-family: var(--font-sans); font-size: 15px; line-height: 24px; color: var(--text); }
   .textblock.is-answer { background: var(--bg); border-color: var(--border-strong); }
@@ -465,7 +468,8 @@
   .scale-ends { display: flex; justify-content: space-between; max-width: 248px; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
   .auto { display: flex; flex-direction: column; gap: 10px; }
   .auto li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .scorebar { position: sticky; bottom: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--bg); }
+  /* Fixed from edge to edge, like .savebar: the canvas puts it after main.page, which the app shell cannot. */
+  .scorebar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--bg); }
   .scorebar-mid { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13px; color: var(--text-muted); }
   .saved { display: inline-flex; align-items: center; gap: 6px; color: var(--success); font-weight: 500; }
   .btn .kbd { height: 18px; min-width: 18px; padding: 0 4px; font-size: 10.5px; border-bottom-width: 1px; }

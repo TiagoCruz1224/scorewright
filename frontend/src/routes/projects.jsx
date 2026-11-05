@@ -4,6 +4,7 @@ import { attempt, ErrorSummary, Field } from '../components/forms.jsx';
 import { Icon } from '../components/icons.jsx';
 import { Breadcrumb, Pager, usePageTitle } from '../components/layout.jsx';
 import { RoleBadge, ROLES } from '../roles.jsx';
+import { AnswersProgress, evaluationPath, ScoreLink, StatePills } from './evaluations.jsx';
 
 /** "Support assistant" → "SA": the glyph of a project row. */
 const glyph = (name) => {
@@ -169,22 +170,25 @@ export function ProjectLayout() {
   );
 }
 
-/** How far the project is along the "Next steps" (UX §3.1): for now, whether it has a dataset and a run. */
+/** How far the project is along the "Next steps" (UX §3.1), and its five latest evaluations. */
 export async function overviewLoader({ params, request }) {
-  const [datasets, runs, rubrics] = await Promise.all(
-    ['datasets', 'runs', 'rubrics'].map((list) => api(`/api/projects/${params.projectId}/${list}?perPage=1`, { request })),
-  );
+  const base = `/api/projects/${params.projectId}`;
+  const [datasets, runs, rubrics, evaluations] = await Promise.all([
+    ...['datasets', 'runs', 'rubrics'].map((list) => api(`${base}/${list}?perPage=1`, { request })),
+    api(`${base}/evaluations?perPage=5`, { request }),
+  ]);
 
-  return { hasDataset: datasets.total > 0, hasRun: runs.total > 0, hasRubric: rubrics.total > 0 };
+  return { hasDataset: datasets.total > 0, hasRun: runs.total > 0, hasRubric: rubrics.total > 0, evaluations };
 }
 
 export function Overview() {
   const project = useRouteLoaderData('project');
-  const { hasDataset, hasRun, hasRubric } = useLoaderData();
+  const { hasDataset, hasRun, hasRubric, evaluations } = useLoaderData();
   const steps = [
     { label: 'Import a dataset', done: hasDataset, to: 'datasets/new' },
     { label: 'Import runs', done: hasRun, to: 'runs/new' },
     { label: 'Create a rubric', done: hasRubric, to: 'rubrics/new' },
+    { label: 'Start an evaluation', done: evaluations.total > 0, to: 'evaluations/new' },
   ];
   const next = steps.find((step) => !step.done);
   usePageTitle('Overview', project.name);
@@ -203,46 +207,136 @@ export function Overview() {
         </div>
       </div>
 
-      {/*
-        The owner's main column has the next steps. Other roles get "Your evaluations" there with the evaluation
-        screens (slice 11); until then their role card stands alone, left-aligned, instead of beside an empty column.
-      */}
-      {project.role === 'owner' ? (
-        <div className="grid-main">
-          <section className="card" aria-labelledby="next-steps-heading">
-            <div className="card-head">
-              <h2 className="card-title" id="next-steps-heading">
-                Next steps
-              </h2>
-              <span className="small muted">
-                {steps.filter((step) => step.done).length} of {steps.length} done
-              </span>
-            </div>
-            {/* The last step (evaluation) joins this list with its screens. */}
-            <ol className="steps">
-              {steps.map((step, index) => (
-                <li key={step.label} className={step.done ? 'step is-done' : 'step'}>
-                  <span className="step-mark">{step.done ? <Icon name="check" /> : index + 1}</span>
-                  {step.done || project.archivedAt ? <span>{step.label}</span> : <Link to={`/projects/${project.id}/${step.to}`}>{step.label}</Link>}
-                  <span className="step-state">{step.done ? 'Done' : step === next && !project.archivedAt ? 'Next' : ''}</span>
-                </li>
-              ))}
-            </ol>
-          </section>
-          <RoleCard project={project} />
+      {/* The main column: the owner's next steps and the latest evaluations; the viewer's latest evaluations; the evaluator's own. */}
+      <div className="grid-main">
+        <div className="stack" style={{ gap: 32 }}>
+          {project.role === 'owner' && (
+            <section className="card" aria-labelledby="next-steps-heading">
+              <div className="card-head">
+                <h2 className="card-title" id="next-steps-heading">
+                  Next steps
+                </h2>
+                <span className="small muted">
+                  {steps.filter((step) => step.done).length} of {steps.length} done
+                </span>
+              </div>
+              <ol className="steps">
+                {steps.map((step, index) => (
+                  <li key={step.label} className={step.done ? 'step is-done' : 'step'}>
+                    <span className="step-mark">{step.done ? <Icon name="check" /> : index + 1}</span>
+                    {step.done || project.archivedAt ? <span>{step.label}</span> : <Link to={`/projects/${project.id}/${step.to}`}>{step.label}</Link>}
+                    <span className="step-state">{step.done ? 'Done' : step === next && !project.archivedAt ? 'Next' : ''}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+          {project.role === 'evaluator' ? <YourEvaluations project={project} evaluations={evaluations} /> : <LatestEvaluations project={project} evaluations={evaluations} />}
         </div>
-      ) : (
-        <RoleCard project={project} className="max-w-[480px]" />
-      )}
+        <RoleCard project={project} />
+      </div>
     </>
   );
 }
 
-function RoleCard({ project, className = '' }) {
+/** The owner's and the viewer's latest evaluations, with their progress and state (UX §2). */
+function LatestEvaluations({ project, evaluations }) {
+  return (
+    <section aria-labelledby="evaluations-heading">
+      <div className="section-head">
+        <h2 className="section-title" id="evaluations-heading">
+          Latest evaluations
+        </h2>
+        {evaluations.total > 0 && <Link to={`/projects/${project.id}/evaluations`}>All evaluations</Link>}
+      </div>
+      {evaluations.total === 0 ? (
+        <p className="muted">No evaluations yet.</p>
+      ) : (
+        <ul className="rows">
+          {evaluations.items.map((evaluation) => (
+            <li key={evaluation.id} className="row sm:grid-cols-[minmax(0,1fr)_220px_96px]">
+              <div>
+                <h3 className="text-sm font-medium">
+                  <Link className="row-link" to={evaluationPath(project, evaluation)}>
+                    <bdi>{evaluation.name}</bdi>
+                  </Link>
+                </h3>
+                <p className="row-desc">
+                  <bdi>
+                    {evaluation.datasetVersion.dataset.name} v{evaluation.datasetVersion.number}
+                  </bdi>{' '}
+                  · <bdi>{evaluation.rubric.name}</bdi>
+                  {evaluation.blind && ' · Blind mode'}
+                </p>
+              </div>
+              <AnswersProgress evaluation={evaluation} />
+              <div className="justify-self-start">
+                <StatePills evaluation={{ ...evaluation, blind: false }} date={false} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** The evaluator's evaluations, with Continue scoring where there is something to score (canvas: Overview, evaluator). */
+function YourEvaluations({ project, evaluations }) {
+  return (
+    <section aria-labelledby="yours-heading">
+      <div className="section-head">
+        <h2 className="section-title" id="yours-heading">
+          Your evaluations
+        </h2>
+        {evaluations.total > 0 && <Link to={`/projects/${project.id}/evaluations`}>All evaluations</Link>}
+      </div>
+      {evaluations.total === 0 ? (
+        <p className="muted">No evaluations yet. The owner starts them, and they appear here to score.</p>
+      ) : (
+        <>
+          <ul className="rows">
+            {evaluations.items.map((evaluation) => (
+              <li key={evaluation.id} className="row grid-cols-[minmax(0,1fr)_auto]">
+                <div className="stack" style={{ gap: 8 }}>
+                  <div>
+                    <h3 className="text-sm font-medium">
+                      <Link className="row-link" to={evaluationPath(project, evaluation)}>
+                        <bdi>{evaluation.name}</bdi>
+                      </Link>
+                    </h3>
+                    <p className="row-desc">
+                      <bdi>
+                        {evaluation.datasetVersion.dataset.name} v{evaluation.datasetVersion.number}
+                      </bdi>{' '}
+                      · <bdi>{evaluation.rubric.name}</bdi>
+                      {evaluation.status === 'closed' && ' · Closed'}
+                      {evaluation.blind && ' · Blind'}
+                    </p>
+                  </div>
+                  <div className="max-w-[360px]">
+                    <AnswersProgress evaluation={evaluation} />
+                  </div>
+                </div>
+                {/* Above the row's stretched link, so both can be clicked. */}
+                <div className="relative z-10">
+                  <ScoreLink project={project} evaluation={evaluation} className="btn btn-primary" />
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="small muted mt-2.5">Results of a blind evaluation unlock when the owner closes it.</p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function RoleCard({ project }) {
   const role = ROLES[project.role];
 
   return (
-    <aside className={`card ${className}`.trim()} aria-labelledby="role-heading">
+    <aside className="card" aria-labelledby="role-heading">
       <div className="card-head">
         <h2 className="card-title" id="role-heading">
           Your role

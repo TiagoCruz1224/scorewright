@@ -7,6 +7,7 @@ namespace App\Evaluations\Controller;
 use App\Evaluations\Dto\DuplicateRubricRequest;
 use App\Evaluations\Dto\SaveRubricRequest;
 use App\Evaluations\Entity\Criterion;
+use App\Evaluations\Entity\CriterionKind;
 use App\Evaluations\Entity\Rubric;
 use App\Evaluations\Repository\EvaluationRepository;
 use App\Evaluations\Repository\RubricRepository;
@@ -167,7 +168,7 @@ final class RubricController
     }
 
     /**
-     * @return array{id: string, name: string, criterionCount: int, lockedAt: string|null}
+     * @return array{id: string, name: string, criterionCount: int, automaticCount: int, lockedAt: string|null}
      */
     private static function summaryJson(Rubric $rubric): array
     {
@@ -175,6 +176,8 @@ final class RubricController
             'id' => $rubric->getId()->toRfc4122(),
             'name' => $rubric->getName(),
             'criterionCount' => \count($rubric->getCriteria()),
+            // "2 manual criteria · 2 automatic" when an evaluation is created
+            'automaticCount' => \count(array_filter($rubric->getCriteria(), static fn (Criterion $criterion): bool => CriterionKind::Automatic === $criterion->getData()->kind)),
             'lockedAt' => $rubric->getLockedAt()?->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM),
         ];
     }

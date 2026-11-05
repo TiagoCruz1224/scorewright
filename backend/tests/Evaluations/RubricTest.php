@@ -33,8 +33,9 @@ final class RubricTest extends ApiTestCase
 
         self::assertSame(201, $created->getStatusCode(), (string) $created->getContent());
         $rubric = self::json($created);
-        self::assertSame(['id', 'name', 'criterionCount', 'lockedAt', 'duplicatedFrom', 'criteria'], array_keys($rubric));
+        self::assertSame(['id', 'name', 'criterionCount', 'automaticCount', 'lockedAt', 'duplicatedFrom', 'criteria'], array_keys($rubric));
         self::assertSame(['Support quality', 4, null, null], [$rubric['name'], $rubric['criterionCount'], $rubric['lockedAt'], $rubric['duplicatedFrom']]);
+        self::assertSame(2, $rubric['automaticCount']);
         self::assertSame(['id', 'kind', 'name', 'guidance', 'weight', 'checkType', 'checkParams'], array_keys($rubric['criteria'][0]));
         self::assertSame([
             ['scale_1_5', 'Tone', "1: rude\n5: warm and clear", 2, null, null], // a whole weight is a JSON integer
@@ -46,7 +47,7 @@ final class RubricTest extends ApiTestCase
         $client->loginUser($fixture['viewer']);
         self::assertSame($rubric, self::json(self::requestJson($client, 'GET', "$path/rubrics/{$rubric['id']}")));
         self::assertSame(
-            ['items' => [array_slice($rubric, 0, 4)], 'page' => 1, 'perPage' => 25, 'total' => 1],
+            ['items' => [array_slice($rubric, 0, 5)], 'page' => 1, 'perPage' => 25, 'total' => 1],
             self::json(self::requestJson($client, 'GET', "$path/rubrics")),
         );
     }
