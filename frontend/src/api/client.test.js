@@ -21,6 +21,20 @@ describe('api', () => {
     expect(post.body).toBe('{"name":"Support bot"}');
   });
 
+  it('sends a FormData as it is, for the browser to encode as multipart (uploads)', async () => {
+    const fetch = vi.fn(async () => Response.json({}));
+    vi.stubGlobal('fetch', fetch);
+    const body = new FormData();
+    body.set('name', 'Support cases');
+
+    await api('/api/projects/1/datasets', { method: 'POST', body });
+
+    const [, init] = fetch.mock.calls[0];
+    expect(init.body).toBe(body);
+    expect(init.headers['Content-Type']).toBeUndefined();
+    expect(init.headers['csrf-token']).toMatch(/^[-\w]{24,}$/);
+  });
+
   it('returns the JSON of a success, and null for 204', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id: '1' })));
     expect(await api('/api/projects/1')).toEqual({ id: '1' });

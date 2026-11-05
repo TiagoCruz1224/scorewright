@@ -82,6 +82,9 @@ function ProjectNav({ project }) {
             Overview
           </NavLink>
         </li>
+        <li>
+          <NavLink to={`${base}/datasets`}>Datasets</NavLink>
+        </li>
         {project.role === 'owner' && (
           <>
             <li>

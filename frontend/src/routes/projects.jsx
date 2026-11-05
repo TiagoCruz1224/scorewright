@@ -133,8 +133,16 @@ export function ProjectLayout() {
   );
 }
 
+/** How far the project is along the "Next steps" (UX §3.1); for now, whether it has a dataset. */
+export async function overviewLoader({ params, request }) {
+  const datasets = await api(`/api/projects/${params.projectId}/datasets?perPage=1`, { request });
+
+  return { hasDataset: datasets.total > 0 };
+}
+
 export function Overview() {
   const project = useRouteLoaderData('project');
+  const { hasDataset } = useLoaderData();
   const role = ROLES[project.role];
   usePageTitle('Overview', project.name);
 
@@ -143,6 +151,27 @@ export function Overview() {
       <Breadcrumb items={[{ label: 'Projects', to: '/projects' }, { label: project.name }]} />
       <h1>{project.name}</h1>
       {project.description ? <p className="prewrap">{project.description}</p> : <p className="muted">No description.</p>}
+
+      {project.role === 'owner' && (
+        <section aria-labelledby="next-steps-heading" className="mt-8">
+          <h2 id="next-steps-heading">Next steps</h2>
+          {/* The later steps (runs, rubric, evaluation) join this list with their screens. */}
+          <ol className="list-decimal pl-6">
+            <li>
+              {hasDataset ? (
+                <>
+                  Import a dataset: <strong className="text-success">✓ done</strong>
+                </>
+              ) : project.archivedAt ? (
+                'Import a dataset'
+              ) : (
+                <Link to={`/projects/${project.id}/datasets/new`}>Import a dataset</Link>
+              )}
+            </li>
+          </ol>
+        </section>
+      )}
+
       <h2 className="mt-8">Your role</h2>
       <p>
         <span className="badge mr-2">{role.label}</span>

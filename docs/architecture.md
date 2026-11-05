@@ -67,10 +67,14 @@ Modules call each other through PHP services, never over HTTP.
 
 Frontend layout (`frontend/src/`):
 - `routes.jsx`: the UX page map as React Router routes; `routes/`: one module per area (auth, projects, members,
-  settings), each with its pages and their loaders and actions.
-- `api/client.js`: the one `fetch` client. It sends the CSRF header on unsafe requests, turns Problem Details into an
-  `ApiError` (with `retryAfter` on a 429), and turns a 401 into a redirect to Sign in that comes back to the page. No
-  generated types.
+  settings, datasets, the import format page), each with its pages and their loaders and actions.
+- `api/client.js`: the one `fetch` client. It sends the CSRF header on unsafe requests, a `FormData` body as
+  multipart (uploads), turns Problem Details into an `ApiError` (with `retryAfter` on a 429), and turns a 401 into a
+  redirect to Sign in that comes back to the page. No generated types.
+- `importFormat.js`: the import limits and the readable names of the import error codes, for every screen that
+  shows them (the file field's hint, the rejected-import summary, the format page). They mirror the API's limits.
+- `components/imports.jsx`: the file field with its limits, the upload progress status, and Import rejected (UX §4.3):
+  the summary that takes the focus, the counts by type, and the table by line (CSV) or item (JSON).
 - `components/`: the layout (top bar, skip link, project sections, breadcrumb, page title, theme toggle, account
   menu, error page) and the forms (an error summary on top, errors next to each field from the API's `errors[]`,
   status messages).

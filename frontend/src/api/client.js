@@ -26,21 +26,24 @@ export class ApiError extends Error {
  * call when the user navigates away.
  *
  * @param {string} path
- * @param {{method?: string, body?: unknown, request?: Request, redirectOn401?: boolean}} [options]
+ * @param {{method?: string, body?: unknown, request?: Request, redirectOn401?: boolean}} [options] body: a value to
+ *        send as JSON, or a FormData to send as multipart/form-data (an upload)
  */
 export async function api(path, { method = 'GET', body, request, redirectOn401 = true } = {}) {
   const headers = { Accept: 'application/json, application/problem+json' };
   if (!['GET', 'HEAD'].includes(method)) {
     headers['csrf-token'] = csrfToken;
   }
-  if (body !== undefined) {
+  // FormData (an upload) goes as multipart/form-data, with the boundary the browser sets; anything else as JSON.
+  const isForm = body instanceof FormData;
+  if (body !== undefined && !isForm) {
     headers['Content-Type'] = 'application/json';
   }
 
   const response = await fetch(path, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined || isForm ? body : JSON.stringify(body),
     credentials: 'same-origin',
     signal: request?.signal,
   });

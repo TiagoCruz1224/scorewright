@@ -1,32 +1,20 @@
-import { render, screen, within } from '@testing-library/react';
-import { createMemoryRouter, RouterProvider } from 'react-router';
-import { describe, expect, it, vi } from 'vitest';
-import { routes } from '../routes.jsx';
+import { screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import { ME, page, project, renderApp } from '../test-utils.jsx';
 
-const members = {
-  items: [
-    { userId: 'u1', email: 'ana@example.com', displayName: 'Ana', role: 'owner' },
-    { userId: 'u2', email: 'bo@example.com', displayName: 'Bo', role: 'viewer' },
-  ],
-  page: 1,
-  perPage: 25,
-  total: 2,
-};
+const members = page([
+  { userId: 'u1', email: 'ana@example.com', displayName: 'Ana', role: 'owner' },
+  { userId: 'u2', email: 'bo@example.com', displayName: 'Bo', role: 'viewer' },
+]);
 
-/** The app at `path`, signed in as Ana, with the project answering `project` (role and archive state). */
-async function renderPage(path, project) {
-  const answers = {
-    '/api/me': { id: 'u1', email: 'ana@example.com', displayName: 'Ana' },
-    '/api/projects/p1': { id: 'p1', name: 'Support bot', description: '', archivedAt: null, ...project },
+/** The app at `path`, signed in as Ana, with the project answering `fields` (role and archive state). */
+const renderPage = (path, fields) =>
+  renderApp(path, {
+    '/api/me': ME,
+    '/api/projects/p1': project(fields),
     '/api/projects/p1/members?page=1': members,
-  };
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (url) => (url in answers ? Response.json(answers[url]) : new Response(null, { status: 404 }))),
-  );
-  render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: [path] })} />);
-  await screen.findByRole('heading', { level: 1 });
-}
+    '/api/projects/p1/datasets?perPage=1': { ...page([]), perPage: 1 },
+  });
 
 const projectNav = () => within(screen.getByRole('navigation', { name: 'Project' }));
 
@@ -39,15 +27,18 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
     screen.getByRole('heading', { name: 'Invite a member' });
     expect(screen.getAllByRole('button', { name: /^Change role of/ })).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: /^Remove/ })).toHaveLength(2);
-    expect(document.title).toBe('Members · Support bot · Scorewright');
+    // usePageTitle sets the title in an effect, after the page renders.
+    await waitFor(() => expect(document.title).toBe('Members · Support bot · Scorewright'));
   });
 
-  it('hides Members and Settings from a viewer', async () => {
+  it('hides Members and Settings from a viewer, and the owner’s next steps', async () => {
     await renderPage('/projects/p1', { role: 'viewer' });
 
     projectNav().getByRole('link', { name: 'Overview' });
+    projectNav().getByRole('link', { name: 'Datasets' });
     expect(projectNav().queryByRole('link', { name: 'Members' })).toBeNull();
     expect(projectNav().queryByRole('link', { name: 'Settings' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Next steps' })).toBeNull();
     screen.getByText('Reads the project and its results.');
   });
 
@@ -58,5 +49,12 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
     screen.getByText('Bo');
     expect(screen.queryByRole('heading', { name: 'Invite a member' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Change role|Remove/ })).toBeNull();
+  });
+
+  it('starts the owner’s next steps with importing a dataset', async () => {
+    await renderPage('/projects/p1', { role: 'owner' });
+
+    const steps = within(screen.getByRole('heading', { name: 'Next steps' }).parentElement);
+    expect(steps.getByRole('link', { name: 'Import a dataset' }).getAttribute('href')).toBe('/projects/p1/datasets/new');
   });
 });
