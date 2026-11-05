@@ -12,4 +12,9 @@ export default defineConfig({
     // File events from a Windows bind mount do not reach the container, so Compose turns polling on.
     watch: { usePolling: process.env.WATCH_POLLING === 'true' },
   },
+  // Vitest: components and the API client in a simulated browser (src/**/*.test.jsx).
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test-setup.js'],
+  },
 });

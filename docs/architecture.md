@@ -65,9 +65,19 @@ Modules call each other through PHP services, never over HTTP.
 - **Analytics** is the leftmost module. It reads the tables of the other modules directly with SQL, read-only, which
   the import-based architecture test cannot see. Its queries are reviewed in code review and covered by its own tests.
 
-Frontend layout (`frontend/src/`): `routes/` (one folder per page in the UX page map), `components/`, and `api/`
-(one small `fetch` client that sends the CSRF header and turns Problem Details responses into errors; no generated
-types).
+Frontend layout (`frontend/src/`):
+- `routes.jsx`: the UX page map as React Router routes; `routes/`: one module per area (auth, projects, members,
+  settings), each with its pages and their loaders and actions.
+- `api/client.js`: the one `fetch` client. It sends the CSRF header on unsafe requests, turns Problem Details into an
+  `ApiError` (with `retryAfter` on a 429), and turns a 401 into a redirect to Sign in that comes back to the page. No
+  generated types.
+- `components/`: the layout (top bar, skip link, project sections, breadcrumb, page title, theme toggle, account
+  menu, error page) and the forms (an error summary on top, errors next to each field from the API's `errors[]`,
+  status messages).
+- The design tokens (UX §6) are CSS variables in `index.css`, exposed to Tailwind with `@theme`; `npm run check`
+  checks their contrast. `public/theme.js` applies the saved or system theme before the first paint.
+- What a page offers follows the caller's role in the project, which `GET /api/projects/{projectId}` returns: an
+  action the API would refuse is not shown (UX §1.5).
 - Server state uses React Router loaders and actions. A data-fetching library is added only if a concrete need appears.
 - UI preferences (theme, keyboard shortcuts on/off) are stored in the browser (`localStorage`), not in the database.
 
@@ -447,7 +457,7 @@ injection.
 | Authorization matrix | PHPUnit data provider | **Every route** × {anonymous, non-member, viewer, evaluator, owner} → expected status. For evaluation routes the matrix adds the **evaluation state** {not blind, blind and open, closed}. Scoring routes expect `409` on closed evaluations; result routes expect `403` for evaluators on blind and open ones. The test reads the router and fails if a new route has no matrix entry (MVP criterion 2). |
 | Blind mode | PHPUnit | As an evaluator on a blind, open evaluation, call **every route the evaluator may read** and assert that no response pairs an answer's text with its run id, label or letter. |
 | Architecture | PHPUnit | Module dependency direction (§3). |
-| Frontend unit | Vitest and Testing Library | Scoring screen (shortcuts, ignored in text fields, autosave and Retry, comment), import-error summary and table, comparison table and chart alternative. |
+| Frontend unit | Vitest and Testing Library (jsdom), in `npm run check` | The API client (CSRF header, Problem Details, 401 redirect); the form error summary; project pages showing only the role's actions. Later: scoring screen (shortcuts, ignored in text fields, autosave and Retry, comment), import-error summary and table, comparison table and chart alternative. |
 | End to end | Playwright with axe-core | MVP acceptance flow 1 on the demo stack, plus automated WCAG checks on the scoring, results and import pages. |
 | Static analysis | PHPStan (level 8 to start), PHP-CS-Fixer, ESLint for JavaScript and JSX (`@eslint/js` recommended rules plus the React Hooks plugin) | Run in CI and locally with one command. |
 | Dependencies | `composer audit`; `npm audit --omit=dev` (any severity in what ships to the browser) and `npm audit --audit-level=high` (dev tooling, including the Vite dev server) | Run in CI and locally with the same command. |
@@ -524,6 +534,7 @@ the authorization matrix and its endpoints to the API reference (`docs/api.md`).
 | 3 | Users and sessions: register, login, logout, `/api/me`, CSRF, throttling; authorization-matrix harness | 029, 037 | Auth flows tested; matrix test enumerates routes |
 | 4 | Projects and members: `ProjectVoter`, 404 for non-members, archive and restore, invite throttling | 029, 030 | Matrix covers project routes; last-owner and archived rules tested |
 | 5 | Dataset import API (CSV and JSON): validation, field limits, `case_key`, versions, cases list with filters | 030, 031 | Every error code and limit has a fixture; all-or-nothing tested; MVP criterion 3 at API level |
+| 6a | App shell and the account and project screens: fetch client, layout, theme, forms; register, sign in and out, projects, overview, members, settings | 029, 030, 038 | Vitest for the client, the error summary and role-based actions; the whole flow works in a browser |
 | 6 | Dataset screens: list, new dataset, import, import-rejected (counts by type), cases browse | 030, 031, 038 | Vitest for the error summary and table |
 | 7 | Run import against a dataset version | 031 | Unknown and duplicate case keys rejected |
 | 8 | Rubrics: manual and automatic criteria, ordering, duplication; rubric editor | 032 | Regex validation, ordering and duplication tested |

@@ -15,7 +15,11 @@ export default defineConfig([
     },
   },
   {
-    files: ['*.config.js'],
+    files: ['public/**/*.js'],
+    languageOptions: { globals: globals.browser, sourceType: 'script' },
+  },
+  {
+    files: ['*.config.js', 'scripts/**/*.mjs'],
     languageOptions: { globals: globals.node },
   },
 ]);

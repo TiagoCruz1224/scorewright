@@ -3,12 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { createBrowserRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import './index.css';
-import Home, { HydrateFallback as HomeFallback, loader as homeLoader } from './routes/Home.jsx';
-
-const router = createBrowserRouter([{ path: '/', Component: Home, loader: homeLoader, HydrateFallback: HomeFallback }]);
+import { routes } from './routes.jsx';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <RouterProvider router={createBrowserRouter(routes)} />
   </StrictMode>,
 );

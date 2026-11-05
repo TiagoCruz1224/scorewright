@@ -46,17 +46,13 @@ After a change to the backend image (`backend/Dockerfile` or `backend/frankenphp
 
 ### The first account
 
-There is no sign-in screen yet, so create an account through the API. Outside a browser any `csrf-token` value of 24
-characters or more will do:
+Open http://localhost:5471 and choose **Register**: the app signs you in and shows your projects. People you want to
+invite to a project register the same way first.
+
+To call the API from outside a browser, send any `csrf-token` value of 24 characters or more with unsafe requests:
 
 ```bash
 curl -X POST http://localhost:8471/api/auth/register -H 'Content-Type: application/json' -H 'csrf-token: any-random-value-of-24-or-more-characters' -d '{"email": "you@example.com", "password": "a long enough passphrase", "displayName": "You"}'
-```
-
-To sign in, open http://localhost:5471 and run this in the browser console; the browser then keeps the session cookie:
-
-```js
-await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'csrf-token': crypto.randomUUID() }, body: JSON.stringify({ email: 'you@example.com', password: 'a long enough passphrase' }) });
 ```
 
 The Vite proxy rewrites the `Host` header to `app`, so the `Origin` that a request to port 5471 carries never matches
@@ -91,8 +87,9 @@ One command runs every check in the containers, and exits non-zero on the first 
 - backend (`composer check`): PHP-CS-Fixer, PHPStan (level 8), PHPUnit against PostgreSQL and `composer audit`. The
   tests use a separate `app_test` database in the same `db` server as the development database `app`; the script
   creates and migrates it, and every test is rolled back, so the development data is not touched;
-- frontend (`npm run check`): ESLint, the production build, and `npm audit` (any vulnerability in the dependencies that
-  ship to the browser fails; for development tooling, high and critical ones fail).
+- frontend (`npm run check`): ESLint, the contrast of the design tokens (WCAG AA, both themes), the Vitest tests, the
+  production build, and `npm audit` (any vulnerability in the dependencies that ship to the browser fails; for
+  development tooling, high and critical ones fail).
 
 On Windows, run it from Git Bash. The CI workflow ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same
 script. To fix the PHP formatting: `docker compose run --rm app vendor/bin/php-cs-fixer fix`.

@@ -1,1 +1,316 @@
 @import "tailwindcss";
+
+/*
+ * Design tokens (UX §6): the values of the wireframes' evalforge.css. scripts/check-contrast.mjs checks every text
+ * and non-text pair in both themes (WCAG 2.2 AA) as part of `npm run check`; it reads the blocks between the markers.
+ * public/theme.js sets data-theme before the first paint: the saved choice, else the system's.
+ */
+/* light */
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f6f7f9;
+  --surface-2: #eceff3;
+  --border: #d0d5dd;
+  --border-strong: #6b7280;
+  --text: #1b1f24;
+  --text-muted: #57606a;
+  --primary: #1d4ed8;
+  --on-primary: #ffffff;
+  --run-a: #1d4ed8;
+  --run-b: #b93a0a;
+  --success: #177330;
+  --danger: #c62828;
+  --warning: #8a5a00;
+  --focus: #7e22ce;
+}
+/* dark */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1216;
+  --surface: #171b21;
+  --surface-2: #20262e;
+  --border: #343c47;
+  --border-strong: #7d8794;
+  --text: #e6e9ee;
+  --text-muted: #a3acb9;
+  --primary: #6ea8fe;
+  --on-primary: #0f1216;
+  --run-a: #6ea8fe;
+  --run-b: #fb923c;
+  --success: #4ac26b;
+  --danger: #ff7b72;
+  --warning: #d4a72c;
+  --focus: #c4a5ff;
+}
+/* end of tokens */
+
+/* The tokens as Tailwind colours (bg-surface, text-text-muted, border-border…), switching with the theme. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-focus: var(--focus);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    scroll-padding-top: 16px;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.25;
+    margin-bottom: 12px;
+  }
+  h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.25;
+    margin-bottom: 12px;
+  }
+  h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.25;
+    margin-bottom: 8px;
+  }
+  p {
+    margin-bottom: 12px;
+  }
+  a {
+    color: var(--primary);
+    text-decoration: underline;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  label {
+    font-weight: 600;
+  }
+  input:not([type="checkbox"], [type="radio"]),
+  select,
+  textarea {
+    width: 100%;
+    max-width: 32rem;
+    min-height: 36px;
+    padding: 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+  }
+  textarea {
+    min-height: 6rem;
+  }
+  [aria-invalid="true"] {
+    border-color: var(--danger) !important;
+    border-width: 2px !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+}
+
+@layer components {
+  .skip-link {
+    position: absolute;
+    left: 8px;
+    top: -48px;
+    z-index: 10;
+    padding: 8px 12px;
+    background: var(--bg);
+  }
+  .skip-link:focus {
+    top: 8px;
+  }
+
+  /* App shell: wraps onto two lines on a phone, with no hidden menu (UX §2). */
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .brand {
+    font-weight: 700;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .topbar-nav ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .topbar-nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .topbar-nav a[aria-current="page"] {
+    background: var(--surface-2);
+    font-weight: 600;
+    box-shadow: inset 0 -2px 0 var(--primary);
+  }
+  .topbar-end {
+    margin-left: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .account {
+    position: relative;
+  }
+  .account > summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 4px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .account-panel {
+    position: absolute;
+    right: 0;
+    z-index: 5;
+    min-width: 14rem;
+    margin-top: 4px;
+    padding: 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg);
+  }
+
+  .breadcrumb ol {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.875rem;
+    margin-bottom: 8px;
+  }
+  .breadcrumb a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+  }
+  .breadcrumb li + li::before {
+    content: "/" / "";
+    margin-right: 4px;
+    color: var(--text-muted);
+  }
+
+  /* Controls: 36 px high, so every target is well above the 24 × 24 px minimum (WCAG 2.5.8). */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 4px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .btn-primary {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: var(--on-primary);
+  }
+  .btn-danger {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+  .hint {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+  .field-error {
+    margin: 0;
+    font-weight: 600;
+    color: var(--danger);
+  }
+  .error-summary {
+    margin-bottom: 24px;
+    padding: 16px;
+    border: 2px solid var(--danger);
+    border-radius: 6px;
+  }
+  .error-summary ul {
+    list-style: disc;
+    padding-left: 24px;
+  }
+
+  .card {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 8px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .notice {
+    margin-bottom: 24px;
+    padding: 12px 16px;
+    border-left: 4px solid var(--warning);
+    background: var(--surface);
+  }
+  .muted {
+    color: var(--text-muted);
+  }
+  .prewrap {
+    white-space: pre-wrap;
+    max-width: 75ch;
+  }
+}
