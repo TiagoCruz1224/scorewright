@@ -16,10 +16,13 @@ final class LoginFailureHandler implements AuthenticationFailureHandlerInterface
 {
     public function onAuthenticationFailure(Request $request, AuthenticationException $exception): Response
     {
-        $problem = $exception instanceof TooManyLoginAttemptsAuthenticationException
-            ? new ApiProblem(429, 'too_many_login_attempts', 'Too many failed login attempts: wait a minute and try again')
-            : new ApiProblem(401, 'invalid_credentials', 'The email or password is not correct');
+        if ($exception instanceof TooManyLoginAttemptsAuthenticationException) {
+            // login_throttling only tells the wait in whole minutes.
+            $minutes = max(1, (int) ($exception->getMessageData()['%minutes%'] ?? 1));
 
-        return $problem->toResponse();
+            return ApiProblem::tooManyRequests('too_many_login_attempts', 'Too many failed login attempts: wait a minute and try again', new \DateTimeImmutable("+$minutes minutes"))->toResponse();
+        }
+
+        return new ApiProblem(401, 'invalid_credentials', 'The email or password is not correct')->toResponse();
     }
 }

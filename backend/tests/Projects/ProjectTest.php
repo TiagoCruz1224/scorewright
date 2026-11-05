@@ -6,6 +6,7 @@ namespace App\Tests\Projects;
 
 use App\Tests\ApiTestCase;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
+use Symfony\Component\HttpFoundation\Response;
 
 final class ProjectTest extends ApiTestCase
 {
@@ -49,6 +50,42 @@ final class ProjectTest extends ApiTestCase
 
         self::assertProblem(self::requestJson($client, 'GET', '/api/projects?perPage=101'), 422, 'validation_failed');
         self::assertProblem(self::requestJson($client, 'GET', '/api/projects?sort=name'), 422, 'validation_failed');
+        self::assertSame([], self::json(self::requestJson($client, 'GET', '/api/projects?page=10000&perPage=100'))['items']);
+        foreach (['10001', '4611686018427387904', '9223372036854775807'] as $page) {
+            self::assertProblem(self::requestJson($client, 'GET', "/api/projects?page=$page&perPage=100"), 422, 'validation_failed');
+        }
+    }
+
+    public function testProjectCreationIsLimitedTo30PerHourForAUser(): void
+    {
+        $client = self::createApiClient();
+        $client->loginUser(self::createProjectWithMembers()['non-member']);
+        for ($project = 1; $project <= 30; ++$project) {
+            self::createProject($client, "Project $project");
+        }
+
+        $response = self::requestJson($client, 'POST', '/api/projects', ['name' => 'Project 31']);
+        self::assertProblem($response, 429, 'too_many_projects');
+        self::assertRetryAfter($response, 3600);
+    }
+
+    public function testNamesAndDescriptionsRejectControlCharacters(): void
+    {
+        $client = self::createApiClient();
+        $fixture = self::createProjectWithMembers();
+        $client->loginUser($fixture['owner']);
+        $path = '/api/projects/'.$fixture['project']->getId();
+
+        // PostgreSQL would cut "a\0b" down to "a"; a line break in a one-line name only garbles it.
+        foreach (["a\0b", "a\nb", "a\tb", "a\u{1B}[31mb", "a\u{85}b"] as $name) {
+            self::assertControlCharacterError(self::requestJson($client, 'POST', '/api/projects', ['name' => $name]), 'name');
+            self::assertControlCharacterError(self::requestJson($client, 'PATCH', $path, ['name' => $name]), 'name');
+        }
+        self::assertControlCharacterError(self::requestJson($client, 'PATCH', $path, ['description' => "a\0b"]), 'description');
+
+        // Descriptions are multi-line.
+        $described = self::requestJson($client, 'PATCH', $path, ['description' => "Line 1\r\nLine 2\n\tindented"]);
+        self::assertSame("Line 1\r\nLine 2\n\tindented", self::json($described)['description']);
     }
 
     public function testAProjectOfOthersLooksExactlyLikeAProjectThatDoesNotExist(): void
@@ -116,6 +153,15 @@ final class ProjectTest extends ApiTestCase
         self::assertIsString($id);
 
         return $id;
+    }
+
+    private static function assertControlCharacterError(Response $response, string $field): void
+    {
+        self::assertProblem($response, 422, 'validation_failed');
+        self::assertSame([['field' => $field, 'code' => 'control_character']], array_map(
+            static fn (array $error): array => ['field' => $error['field'], 'code' => $error['code']],
+            self::json($response)['errors'],
+        ));
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Projects\Controller;
 
+use App\Http\ApiProblem;
 use App\Projects\Dto\CreateProjectRequest;
 use App\Projects\Dto\ProjectListQuery;
 use App\Projects\Dto\UpdateProjectRequest;
@@ -19,6 +20,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\MapQueryString;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
+use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
@@ -30,6 +32,7 @@ final class ProjectController
     public function __construct(
         private readonly ProjectMemberRepository $members,
         private readonly EntityManagerInterface $entityManager,
+        private readonly RateLimiterFactoryInterface $projectCreateLimiter,
     ) {
     }
 
@@ -46,10 +49,18 @@ final class ProjectController
         ]);
     }
 
-    /** Any signed-in user can create a project and becomes its owner. */
+    /**
+     * Any signed-in user can create a project and becomes its owner. Limited per user, because each project is also a
+     * way to look up accounts by email through invites (architecture §9).
+     */
     #[Route('/api/projects', name: 'project_create', methods: ['POST'])]
-    public function create(#[CurrentUser] User $user, #[MapRequestPayload] CreateProjectRequest $request): JsonResponse
+    public function create(#[CurrentUser] User $user, #[MapRequestPayload(acceptFormat: 'json')] CreateProjectRequest $request): JsonResponse
     {
+        $limit = $this->projectCreateLimiter->create($user->getId()->toRfc4122())->consume();
+        if (!$limit->isAccepted()) {
+            throw ApiProblem::tooManyRequests('too_many_projects', 'Too many new projects: try again later', $limit->getRetryAfter());
+        }
+
         $project = new Project($request->name, $request->description);
         $this->entityManager->persist($project);
         $this->entityManager->persist(new ProjectMember($project, $user, ProjectRole::Owner));
@@ -67,7 +78,7 @@ final class ProjectController
 
     #[Route('/api/projects/{projectId}', name: 'project_update', methods: ['PATCH'], requirements: ['projectId' => Requirement::UUID])]
     #[IsGranted(ProjectVoter::MANAGE, 'projectAccess')]
-    public function update(ProjectAccess $projectAccess, #[MapRequestPayload] UpdateProjectRequest $request): JsonResponse
+    public function update(ProjectAccess $projectAccess, #[MapRequestPayload(acceptFormat: 'json')] UpdateProjectRequest $request): JsonResponse
     {
         if (null !== $request->name) {
             $projectAccess->project->rename($request->name);

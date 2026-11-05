@@ -267,12 +267,20 @@ Conventions:
 
 - JSON over HTTPS under `/api`. Every project resource lives under `/api/projects/{projectId}/…`.
 - Timestamps are ISO 8601 in UTC.
-- Lists take `?page=` and `?perPage=` (default 25, max 100) and return `{ "items": [...], "page", "perPage", "total" }`.
-- **Request bodies** map to DTOs (`#[MapRequestPayload]`) validated with Symfony Validator.
+- Lists take `?page=` (1 to 10,000) and `?perPage=` (default 25, max 100) and return
+  `{ "items": [...], "page", "perPage", "total" }`.
+- **Request bodies** map to DTOs (`#[MapRequestPayload(acceptFormat: 'json')]`) validated with Symfony Validator.
+  - Only `application/json` is accepted; a form post or any other type answers `415`.
   - `#[MapRequestPayload]` ignores unknown fields by default. To reject them, the serializer's default context sets
     `allow_extra_attributes: false` (`framework.serializer.default_context`), so an unknown field answers `422`.
-  - A test covers this.
+  - Text fields reject control characters with the reusable `App\Http\NoControlCharacters` constraint (code
+    `control_character`); multi-line fields allow tab, line feed and carriage return. Imports use it too.
+  - Tests cover all of this.
+- **Body size:** a request body is at most **6 MiB** (the 5 MB import file of §9 plus the multipart overhead). Caddy
+  (`request_body max_size`) and PHP (`post_max_size`, `upload_max_filesize`) share the limit, and a larger
+  `Content-Length` answers `413 payload_too_large` before anything is parsed.
 - **Imports** are `multipart/form-data` with one file. Size is checked before parsing.
+- Responses carry `Cache-Control: no-store`.
 - Plain Symfony controllers, no API Platform ([ADR 0006](adr/0006-plain-controllers-and-problem-details.md)).
 
 Prefix `P = /api/projects/{projectId}`. Roles: O = owner, E = evaluator, V = viewer.
@@ -349,11 +357,15 @@ Every error is `application/problem+json` (RFC 9457) with a stable machine-reada
 | 400 | Malformed JSON or multipart |
 | 401 | Not signed in |
 | 403 | Member without the needed role, or an evaluator asking for the results of an open blind evaluation (`results_hidden_until_closed`) |
-| 404 | Resource missing **or in a project the user is not a member of** |
+| 404 | Resource missing **or in a project the user is not a member of**; any unknown path, including `/api` |
 | 409 | `rubric_locked`, `evaluation_closed`, `last_owner`, `in_use`, `project_archived`, duplicate run label, check job already active |
-| 413 | Upload larger than the limit (5 MB by default) |
+| 413 | Request body over 6 MiB, or an import file over its limit (5 MB by default) |
+| 415 | Body that is not `application/json` (imports: not `multipart/form-data`) |
 | 422 | Validation or import errors, including unknown request fields |
-| 429 | Login or invite throttled |
+| 429 | Login, registration, invites or project creation throttled; `Retry-After` gives the seconds to wait |
+
+Every error is Problem Details, whatever the path: the backend only serves the API, so no path shows Symfony's debug
+page or a stack trace.
 
 ## 6. Authentication and authorization
 
@@ -363,10 +375,11 @@ Every error is `application/problem+json` (RFC 9457) with a stable machine-reada
   `/api/auth/login`; logout invalidates the session.
 - The cookie is `HttpOnly`, `Secure`, `SameSite=Lax`. Sessions are stored in PostgreSQL (`PdoSessionHandler`), so a
   container restart does not sign everyone out.
-- **CSRF:** unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`) under `/api` need the `csrf-token` header (a random
-  value of at least 24 characters), checked by Symfony's stateless CSRF token manager in its header variant
-  (`check_header: true`, no double-submit cookie). It also rejects the request when `Origin`, `Referer` or
-  `Sec-Fetch-Site` shows another site. Together with the `SameSite=Lax` cookie this is the protection; see
+- **CSRF:** unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`) need the `csrf-token` header (a random value of at
+  least 24 characters), checked by Symfony's stateless CSRF token manager in its header variant (`check_header: true`,
+  no double-submit cookie). It also rejects the request when `Origin`, `Referer` or `Sec-Fetch-Site` shows another
+  site, and the listener rejects `Origin: null` (sandboxed frames), which the token manager would otherwise treat as
+  no information. Together with the `SameSite=Lax` cookie this is the protection; see
   [ADR 0002](adr/0002-session-cookie-authentication.md). A request listener applies it before the firewall, so
   login and register are covered. ([symfony.com](https://symfony.com/doc/7.4/security/csrf.html))
 - Passwords use the framework's `auto` hasher. The minimum length is 12 characters, there is no maximum below 128, and
@@ -440,21 +453,30 @@ SQLite is not used for tests: the schema relies on PostgreSQL types (JSONB, arra
 
 OWASP ASVS level 1 is the reference. The concrete rules for this project:
 
-- **Access control:** deny by default, membership resolved before anything else, 404 for other projects, an
-  authorization test for every endpoint and evaluation state (§6, §8).
-- **Authentication and sessions:** §6. The session id is regenerated on login, and sessions expire after 8 h idle.
+- **Access control:** deny by default (`access_control` ends with `^/`, so a route added outside `/api` needs a
+  signed-in user too), membership resolved before anything else, 404 for other projects, an authorization test for
+  every route and evaluation state (§6, §8).
+- **Authentication and sessions:** §6. A session id from before login is replaced at login (signing in again as the
+  same user keeps the session), and sessions expire after 8 h idle.
 - **Account enumeration:** two endpoints necessarily tell the caller whether an account exists. Both are accepted for
   the MVP, and both are rate-limited:
   - **inviting** an email without an account answers `no_account` (invites only add existing users). Invites are
-    limited per project and owner (20 per hour, `429 too_many_invites`), and only owners see member emails;
+    limited per inviting user, across all their projects (20 per hour, `429 too_many_invites`), and only owners see
+    member emails. Creating projects is limited too (30 per hour per user, `429 too_many_projects`), so that a new
+    project never means a fresh allowance;
   - **registering** an email that is already used answers `email_taken`. Registration is open and sends no email, so
     there is no way to hide this. Registrations are limited per client IP (10 per hour, `429 too_many_registrations`).
-  - Both limits are set in `config/packages/framework.yaml` (`rate_limiter`).
+  - The limits are set in `config/packages/framework.yaml` (`rate_limiter`); every `429` carries `Retry-After`.
   - Login answers the same `invalid_credentials` for an unknown email and a wrong password.
 - **Input:**
-  - DTO validation at the API boundary, unknown fields rejected.
-  - Upload limits are checked in PHP and in the app (5 MB, 5,000 rows by default, configurable), plus the field limits in §4.
+  - DTO validation at the API boundary, unknown fields rejected, JSON bodies only.
+  - Text fields reject control characters (§5); PostgreSQL would otherwise cut a text off at a NUL byte.
+  - The request body is capped at 6 MiB (§5, `413`). The import file limit is 5 MB, plus 5,000 rows by default
+    (configurable, checked by the app), and the field limits in §4. Raising the file limit above about 6 MB means
+    raising `post_max_size`, `upload_max_filesize` (`backend/frankenphp/app.ini`) and `request_body max_size`
+    (`backend/frankenphp/Caddyfile`) with it.
   - JSON parsing has a depth limit.
+  - PHP errors go to the log only (`display_errors = Off`, also in development).
   - Uploaded files are parsed in memory, **never stored or served back** ([ADR 0004](adr/0004-synchronous-all-or-nothing-imports.md)).
 - **Output:** React escapes text by default, and answers are rendered as text only (`pre-wrap`), never as HTML.
   CSV formula injection is neutralised.
@@ -462,13 +484,15 @@ OWASP ASVS level 1 is the reference. The concrete rules for this project:
   - `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'`
   - `X-Content-Type-Options: nosniff`
   - `Referrer-Policy: same-origin`
+  - no `Server` header
   - HSTS when served over HTTPS
+  - `Cache-Control: no-store` on API responses (set by Symfony)
 - **Privacy:** case contents, answers, comments and import excerpts never go into logs. A Monolog processor drops
   request bodies, and exception messages do not include payloads.
 - **Secrets:** `.env.example` holds placeholders only; real values come from environment variables. CI fails if
   `composer audit` reports a known vulnerability.
-- **Denial of service:** the import, field and job limits above, list pagination capped at 100, and login and invite
-  throttling.
+- **Denial of service:** the body, import, field and job limits above, list pagination capped at 100 per page and
+  10,000 pages, and the rate limits on login, registration, invites and project creation.
 
 ## 10. How the UX requests are met (UX §7)
 

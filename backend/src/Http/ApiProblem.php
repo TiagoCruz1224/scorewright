@@ -35,6 +35,12 @@ final class ApiProblem extends \RuntimeException implements HttpExceptionInterfa
         return new self(422, 'validation_failed', 'The request is not valid', ['errors' => $errors]);
     }
 
+    /** 429 with Retry-After: the number of seconds until the rate limiter accepts the next attempt. */
+    public static function tooManyRequests(string $problemCode, string $title, \DateTimeInterface $retryAt): self
+    {
+        return new self(429, $problemCode, $title, [], ['Retry-After' => (string) max(1, $retryAt->getTimestamp() - time())]);
+    }
+
     public function getStatusCode(): int
     {
         return $this->status;

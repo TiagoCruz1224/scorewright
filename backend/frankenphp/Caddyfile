@@ -3,7 +3,15 @@
 	root /app/public
 	encode zstd br gzip
 
+	# Hard cap on request bodies, equal to post_max_size in app.ini (architecture §9). Caddy only enforces it while
+	# the body is read, so a body without Content-Length is cut off here; a larger Content-Length is answered with
+	# 413 by Symfony (App\Http\RequestBodyLimitListener).
+	request_body {
+		max_size 6MiB
+	}
+
 	header {
+		-Server
 		Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
 		X-Content-Type-Options nosniff
 		Referrer-Policy same-origin

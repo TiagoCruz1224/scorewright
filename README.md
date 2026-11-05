@@ -21,7 +21,8 @@ are not needed: they run in the containers (PHP 8.5, Node.js 26).
 docker compose up
 ```
 
-The first start builds the PHP image and installs the PHP and npm dependencies, which takes a few minutes. Then:
+The first start builds the PHP image and installs the PHP and npm dependencies: a minute or two once the base images
+are downloaded, longer before. Then:
 
 | URL | What |
 |---|---|
@@ -35,6 +36,32 @@ The host ports are deliberately uncommon (8471 and 5471), so they rarely collide
 them (`APP_PORT`, `FRONTEND_PORT`) or the local passwords, copy `.env.example` to `.env` and edit it; `.env` is ignored
 by Git. Both ports are bound to `127.0.0.1` only, so the stack is not reachable from the local network; the database
 port is not published at all.
+
+Compose names the stack after the folder (`scorewright` for a clone in `Scorewright/`), and both `docker compose up`
+and `./check.sh` act on that stack and its volumes. To run a second copy next to an existing one, give it its own name
+and ports in its `.env`, for example `COMPOSE_PROJECT_NAME=scorewright2`, `APP_PORT=8481` and `FRONTEND_PORT=5481`.
+
+After a change to the backend image (`backend/Dockerfile` or `backend/frankenphp/`), run `docker compose up --build`.
+`./check.sh` rebuilds it by itself.
+
+### The first account
+
+There is no sign-in screen yet, so create an account through the API. Outside a browser any `csrf-token` value of 24
+characters or more will do:
+
+```bash
+curl -X POST http://localhost:8471/api/auth/register -H 'Content-Type: application/json' -H 'csrf-token: any-random-value-of-24-or-more-characters' -d '{"email": "you@example.com", "password": "a long enough passphrase", "displayName": "You"}'
+```
+
+To sign in, open http://localhost:5471 and run this in the browser console; the browser then keeps the session cookie:
+
+```js
+await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'csrf-token': crypto.randomUUID() }, body: JSON.stringify({ email: 'you@example.com', password: 'a long enough passphrase' }) });
+```
+
+The Vite proxy rewrites the `Host` header to `app`, so the `Origin` that a request to port 5471 carries never matches
+it. Browsers still pass the CSRF check, because they also send `Sec-Fetch-Site: same-origin`. A client that sends
+`Origin` without `Sec-Fetch-Site` gets `403 csrf_failed` there; it should call the API on port 8471 instead.
 
 ### Where the files live
 
@@ -61,8 +88,9 @@ and these directories hold most of the files that PHP and Vite read. The consequ
 
 One command runs every check in the containers, and exits non-zero on the first failure:
 
-- backend (`composer check`): PHP-CS-Fixer, PHPStan (level 8), PHPUnit against PostgreSQL (a separate `app_test`
-  database, created and migrated by the script) and `composer audit`;
+- backend (`composer check`): PHP-CS-Fixer, PHPStan (level 8), PHPUnit against PostgreSQL and `composer audit`. The
+  tests use a separate `app_test` database in the same `db` server as the development database `app`; the script
+  creates and migrates it, and every test is rolled back, so the development data is not touched;
 - frontend (`npm run check`): ESLint, the production build, and `npm audit` (any vulnerability in the dependencies that
   ship to the browser fails; for development tooling, high and critical ones fail).
 

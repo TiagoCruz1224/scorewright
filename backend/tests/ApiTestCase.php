@@ -105,4 +105,12 @@ abstract class ApiTestCase extends WebTestCase
         self::assertSame('application/problem+json', $response->headers->get('Content-Type'));
         self::assertSame($code, self::json($response)['code']);
     }
+
+    /** Retry-After in whole seconds: at least 1, and at most two windows (a sliding window can make it longer than one). */
+    protected static function assertRetryAfter(Response $response, int $windowSeconds): void
+    {
+        self::assertMatchesRegularExpression('/^\d+$/', (string) $response->headers->get('Retry-After'));
+        self::assertGreaterThanOrEqual(1, (int) $response->headers->get('Retry-After'));
+        self::assertLessThanOrEqual(2 * $windowSeconds, (int) $response->headers->get('Retry-After'));
+    }
 }

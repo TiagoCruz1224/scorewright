@@ -3,9 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { createBrowserRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import './index.css';
-import Home, { loader as homeLoader } from './routes/Home.jsx';
+import Home, { HydrateFallback as HomeFallback, loader as homeLoader } from './routes/Home.jsx';
 
-const router = createBrowserRouter([{ path: '/', Component: Home, loader: homeLoader }]);
+const router = createBrowserRouter([{ path: '/', Component: Home, loader: homeLoader, HydrateFallback: HomeFallback }]);
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

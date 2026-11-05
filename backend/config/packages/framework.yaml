@@ -16,7 +16,8 @@ framework:
         stateless_token_ids: [api]
         check_header: true
 
-    # Registering and inviting both reveal whether an account exists (architecture §9): limit them.
+    # Registering and inviting both reveal whether an account exists (architecture §9): limit them, and limit new
+    # projects too, so that creating projects gives no extra invites. A 429 carries Retry-After.
     rate_limiter:
         registration:
             policy: sliding_window
@@ -24,7 +25,11 @@ framework:
             interval: '1 hour'
         project_invite:
             policy: sliding_window
-            limit: 20 # per project and inviting owner
+            limit: 20 # per inviting user, across all their projects
+            interval: '1 hour'
+        project_create:
+            policy: sliding_window
+            limit: 30 # per user
             interval: '1 hour'
 
     # Unknown request fields are rejected (422) instead of ignored.

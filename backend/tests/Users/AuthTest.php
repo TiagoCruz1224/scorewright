@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Users;
 
 use App\Tests\ApiTestCase;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\BrowserKit\Cookie;
+use Symfony\Component\Uid\Uuid;
 
 final class AuthTest extends ApiTestCase
 {
@@ -59,6 +62,28 @@ final class AuthTest extends ApiTestCase
         yield 'blank display name' => [['displayName' => '   '], 'displayName', 'is_blank'];
         yield 'email of the wrong type' => [['email' => 42], 'email', 'invalid_type'];
         yield 'unknown field' => [['role' => 'admin'], 'role', 'unknown_field'];
+        yield 'control character in the display name' => [['displayName' => "Ana\u{7}"], 'displayName', 'control_character'];
+        yield 'line feed in the display name' => [['displayName' => "Ana\nB"], 'displayName', 'control_character'];
+    }
+
+    public function testRegisterOnlyAcceptsJson(): void
+    {
+        $client = self::createApiClient();
+        $client->request('POST', '/api/auth/register', ['email' => 'olga@example.com', 'password' => self::PASSWORD, 'displayName' => 'Olga']);
+
+        self::assertProblem($client->getResponse(), 415, 'unsupported_media_type');
+    }
+
+    public function testTheDatabaseRejectsAnEmailThatDiffersOnlyInCase(): void
+    {
+        $client = self::createApiClient();
+        self::register($client, 'pia@example.com');
+        $connection = self::getContainer()->get('doctrine.dbal.default_connection');
+        self::assertInstanceOf(Connection::class, $connection);
+
+        // Bypasses the app, which always stores emails lower-case: the unique index on lower(email) still holds.
+        $this->expectException(UniqueConstraintViolationException::class);
+        $connection->insert('users', ['id' => Uuid::v7()->toRfc4122(), 'email' => 'PIA@example.com', 'password_hash' => 'x', 'display_name' => 'Pia', 'created_at' => '2026-11-05 10:00:00+00']);
     }
 
     public function testPasswordsOf12To128CharactersHaveNoCompositionRules(): void
@@ -76,7 +101,9 @@ final class AuthTest extends ApiTestCase
             self::assertSame(201, self::register($client, "user$registration@example.com")->getStatusCode());
         }
 
-        self::assertProblem(self::register($client, 'user11@example.com'), 429, 'too_many_registrations');
+        $response = self::register($client, 'user11@example.com');
+        self::assertProblem($response, 429, 'too_many_registrations');
+        self::assertRetryAfter($response, 3600);
     }
 
     public function testMalformedJsonIsABadRequest(): void
@@ -152,15 +179,17 @@ final class AuthTest extends ApiTestCase
             self::assertProblem(self::login($client, 'joao@example.com', 'not the password at all'), 401, 'invalid_credentials');
         }
 
-        self::assertProblem(self::login($client, 'joao@example.com'), 429, 'too_many_login_attempts');
+        $response = self::login($client, 'joao@example.com');
+        self::assertProblem($response, 429, 'too_many_login_attempts');
+        self::assertRetryAfter($response, 60);
     }
 
-    public function testLoginNeedsJson(): void
+    public function testLoginOnlyAcceptsJson(): void
     {
         $client = self::createApiClient();
         $client->request('POST', '/api/auth/login', ['email' => 'kim@example.com', 'password' => self::PASSWORD]);
 
-        self::assertProblem($client->getResponse(), 400, 'malformed_request');
+        self::assertProblem($client->getResponse(), 415, 'unsupported_media_type');
     }
 
     public function testLogoutEndsTheSession(): void
@@ -211,6 +240,7 @@ final class AuthTest extends ApiTestCase
         yield 'Origin of another site' => [['HTTP_ORIGIN' => 'https://evil.example']];
         yield 'Referer of another site' => [['HTTP_REFERER' => 'https://evil.example/page']];
         yield 'Sec-Fetch-Site cross-site' => [['HTTP_SEC_FETCH_SITE' => 'cross-site']];
+        yield 'Origin null (sandboxed frame)' => [['HTTP_ORIGIN' => 'null']];
     }
 
     public function testSameOriginRequestsWithTheCsrfHeaderPass(): void

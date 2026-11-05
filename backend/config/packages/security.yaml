@@ -21,10 +21,11 @@ security:
             # 5 attempts per minute per email and IP, and 25 per IP.
             login_throttling: ~
 
-    # Deny by default: every /api route needs a signed-in user unless it is listed here.
+    # Deny by default: every path needs a signed-in user unless it is listed here, including a route someone adds
+    # outside /api. (No remember-me, so IS_AUTHENTICATED is the same as IS_AUTHENTICATED_FULLY.)
     access_control:
         - { path: ^/api/(health|auth/(register|login|logout))$, roles: PUBLIC_ACCESS }
-        - { path: ^/api/, roles: IS_AUTHENTICATED }
+        - { path: ^/, roles: IS_AUTHENTICATED }
 
 when@test:
     security:

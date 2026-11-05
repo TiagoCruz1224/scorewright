@@ -20,6 +20,7 @@ final class MemberTest extends ApiTestCase
         self::assertSame(3, $page['total']);
         self::assertSame(['Evaluator', 'Owner', 'Viewer'], array_column($page['items'], 'displayName'));
         self::assertSame(['userId' => $fixture['owner']->getId()->toRfc4122(), 'email' => $fixture['owner']->getEmail(), 'displayName' => 'Owner', 'role' => 'owner'], $page['items'][1]);
+        self::assertProblem(self::requestJson($client, 'GET', '/api/projects/'.$fixture['project']->getId().'/members?page=4611686018427387904&perPage=100'), 422, 'validation_failed');
     }
 
     public function testTheOwnerInvitesAnExistingUserByEmail(): void
@@ -49,7 +50,7 @@ final class MemberTest extends ApiTestCase
         self::assertErrorCode(self::requestJson($client, 'POST', $path, ['email' => $fixture['non-member']->getEmail(), 'role' => 'admin']), 'no_such_choice');
     }
 
-    public function testInvitesAreLimitedTo20PerHourForAProjectAndOwner(): void
+    public function testInvitesAreLimitedTo20PerHourForTheInvitingUserAcrossProjects(): void
     {
         $client = self::createApiClient();
         $fixture = self::createProjectWithMembers();
@@ -60,6 +61,11 @@ final class MemberTest extends ApiTestCase
             self::assertErrorCode(self::requestJson($client, 'POST', $path, ['email' => "nobody$invite@example.com", 'role' => 'viewer']), 'no_account');
         }
 
+        // A new project gives no fresh allowance.
+        $otherProject = self::json(self::requestJson($client, 'POST', '/api/projects', ['name' => 'Another project']))['id'];
+        $response = self::requestJson($client, 'POST', "/api/projects/$otherProject/members", ['email' => $fixture['non-member']->getEmail(), 'role' => 'viewer']);
+        self::assertProblem($response, 429, 'too_many_invites');
+        self::assertRetryAfter($response, 3600);
         self::assertProblem(self::requestJson($client, 'POST', $path, ['email' => $fixture['non-member']->getEmail(), 'role' => 'viewer']), 429, 'too_many_invites');
     }
 

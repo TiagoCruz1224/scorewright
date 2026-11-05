@@ -14,8 +14,10 @@ use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 
 /**
- * Renders every error under /api as application/problem+json. Runs after the security listener (which turns access
- * errors into 401/403) and after the error logger, and never exposes the message of an unexpected exception.
+ * Renders every error as application/problem+json, whatever the path: this backend only serves the API, so `/api`,
+ * a path outside it or a typo never shows Symfony's debug page or a stack trace. Runs after the security listener
+ * (which turns access errors into 401/403) and after the error logger, and never exposes the message of an
+ * unexpected exception.
  */
 #[AsEventListener(priority: -64)]
 final class ProblemDetailsListener
@@ -34,10 +36,6 @@ final class ProblemDetailsListener
 
     public function __invoke(ExceptionEvent $event): void
     {
-        if (!str_starts_with($event->getRequest()->getPathInfo(), '/api/')) {
-            return;
-        }
-
         $event->setResponse(self::toProblem($event->getThrowable())->toResponse());
     }
 

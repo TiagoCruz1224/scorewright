@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Users\Dto;
 
+use App\Http\NoControlCharacters;
 use Symfony\Component\Validator\Constraints as Assert;
 
 final readonly class RegisterRequest
@@ -21,6 +22,7 @@ final readonly class RegisterRequest
 
         #[Assert\NotBlank(normalizer: 'trim')]
         #[Assert\Length(max: 100)]
+        #[NoControlCharacters]
         public string $displayName = '',
     ) {
     }

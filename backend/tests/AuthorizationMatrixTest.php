@@ -6,11 +6,14 @@ namespace App\Tests;
 
 use App\Users\Entity\User;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\Security\Http\AccessMapInterface;
 
 /**
- * Authorization matrix (architecture §8, MVP criterion 2): the expected status of every /api route for every actor.
- * A new route fails testEveryApiRouteIsInTheMatrix until it is added here. Request bodies are minimal on purpose: the
+ * Authorization matrix (architecture §8, MVP criterion 2): the expected status of every route for every actor.
+ * A new route fails testEveryRouteIsInTheMatrix until it is added here. Request bodies are minimal on purpose: the
  * matrix checks who gets through, the feature tests check what happens next.
  *
  * Each case runs against a fresh active project with an owner, an evaluator and a viewer, plus a signed-in user who
@@ -39,19 +42,14 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'member_remove' => ['DELETE', '/api/projects/{projectId}/members/{userId}', null, [401, 404, 403, 403, 204]],
     ];
 
-    public function testEveryApiRouteIsInTheMatrix(): void
+    /** Every route, not only those under /api: a route added elsewhere must be in the matrix too. */
+    public function testEveryRouteIsInTheMatrix(): void
     {
         $router = self::getContainer()->get('router');
         self::assertInstanceOf(RouterInterface::class, $router);
+        $routes = $router->getRouteCollection()->all();
 
-        $routes = [];
-        foreach ($router->getRouteCollection() as $name => $route) {
-            if (str_starts_with($route->getPath(), '/api/')) {
-                $routes[$name] = $route;
-            }
-        }
-
-        self::assertEqualsCanonicalizing(array_keys(self::MATRIX), array_keys($routes), 'Every /api route needs an entry in AuthorizationMatrixTest::MATRIX, and only those.');
+        self::assertEqualsCanonicalizing(array_keys(self::MATRIX), array_keys($routes), 'Every route needs an entry in AuthorizationMatrixTest::MATRIX, and only those.');
         foreach ($routes as $name => $route) {
             [$method, $path] = self::MATRIX[$name];
             self::assertSame($route->getPath(), $path, "Path of route \"$name\"");
@@ -74,7 +72,48 @@ final class AuthorizationMatrixTest extends ApiTestCase
     #[DataProvider('routesAndActors')]
     public function testRouteAnswersTheExpectedStatusForEachActor(string $route, string $actor): void
     {
-        [$method, $path, $body, $statuses] = self::MATRIX[$route];
+        $response = self::requestAs($route, $actor);
+
+        $expected = array_combine(self::ACTORS, self::MATRIX[$route][3])[$actor];
+        self::assertSame($expected, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function routesWithABody(): iterable
+    {
+        foreach (self::MATRIX as $route => [, , $body]) {
+            if (null !== $body) {
+                yield $route => [$route];
+            }
+        }
+    }
+
+    /** A form post (or any body that is not JSON) is refused before anything reads it. */
+    #[DataProvider('routesWithABody')]
+    public function testRoutesWithABodyOnlyAcceptJson(string $route): void
+    {
+        self::assertProblem(self::requestAs($route, 'owner', asForm: true), 415, 'unsupported_media_type');
+    }
+
+    /** Deny by default, outside /api too: a route someone adds anywhere needs a signed-in user unless listed. */
+    public function testEveryPathButThePublicOnesNeedsASignedInUser(): void
+    {
+        $accessMap = self::getContainer()->get('security.access_map');
+        self::assertInstanceOf(AccessMapInterface::class, $accessMap);
+
+        foreach (['/', '/admin/dummy', '/api', '/api/projects', '/api/healthz', '/api/auth/login/x'] as $path) {
+            self::assertSame([['IS_AUTHENTICATED'], null], $accessMap->getPatterns(Request::create($path)), $path);
+        }
+        foreach (['/api/health', '/api/auth/register', '/api/auth/login', '/api/auth/logout'] as $path) {
+            self::assertSame([['PUBLIC_ACCESS'], null], $accessMap->getPatterns(Request::create($path)), $path);
+        }
+    }
+
+    private static function requestAs(string $route, string $actor, bool $asForm = false): Response
+    {
+        [$method, $path, $body] = self::MATRIX[$route];
         $client = self::createApiClient();
         $fixture = self::createProjectWithMembers();
         if ('anonymous' !== $actor) {
@@ -88,10 +127,14 @@ final class AuthorizationMatrixTest extends ApiTestCase
             '{userId}' => $fixture['viewer']->getId()->toRfc4122(),
             '{nonMemberEmail}' => $fixture['non-member']->getEmail(),
         ];
+        $uri = strtr($path, $placeholders);
         $body = null === $body ? null : array_map(static fn (string $value): string => strtr($value, $placeholders), $body);
-        $response = self::requestJson($client, $method, strtr($path, $placeholders), $body);
+        if (!$asForm) {
+            return self::requestJson($client, $method, $uri, $body);
+        }
 
-        $expected = array_combine(self::ACTORS, $statuses)[$actor];
-        self::assertSame($expected, $response->getStatusCode(), (string) $response->getContent());
+        $client->request($method, $uri, server: ['CONTENT_TYPE' => 'application/x-www-form-urlencoded'], content: http_build_query($body ?? []));
+
+        return $client->getResponse();
     }
 }

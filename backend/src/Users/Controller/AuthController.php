@@ -32,11 +32,12 @@ final class AuthController
     }
 
     #[Route('/api/auth/register', name: 'auth_register', methods: ['POST'])]
-    public function register(Request $httpRequest, #[MapRequestPayload] RegisterRequest $request): JsonResponse
+    public function register(Request $httpRequest, #[MapRequestPayload(acceptFormat: 'json')] RegisterRequest $request): JsonResponse
     {
         // email_taken reveals that an account exists (§9): limit attempts per client IP.
-        if (!$this->registrationLimiter->create($httpRequest->getClientIp())->consume()->isAccepted()) {
-            throw new ApiProblem(429, 'too_many_registrations', 'Too many registrations from this address: try again later');
+        $limit = $this->registrationLimiter->create($httpRequest->getClientIp())->consume();
+        if (!$limit->isAccepted()) {
+            throw ApiProblem::tooManyRequests('too_many_registrations', 'Too many registrations from this address: try again later', $limit->getRetryAfter());
         }
 
         if (null !== $this->users->loadUserByIdentifier($request->email)) {
@@ -56,12 +57,15 @@ final class AuthController
         return new JsonResponse(self::userJson($user), Response::HTTP_CREATED);
     }
 
-    /** json_login (security.yaml) checks the credentials before this runs and starts a new session. */
+    /**
+     * json_login (security.yaml) checks the credentials of a JSON request before this runs and starts a new session.
+     * It ignores any other request, which reaches this method with no user or with the user already signed in.
+     */
     #[Route('/api/auth/login', name: 'auth_login', methods: ['POST'])]
-    public function login(#[CurrentUser] ?User $user): JsonResponse
+    public function login(Request $request, #[CurrentUser] ?User $user): JsonResponse
     {
-        if (null === $user) {
-            throw new ApiProblem(400, 'malformed_request', 'Send the credentials as JSON: {"email": "…", "password": "…"}');
+        if ('json' !== $request->getContentTypeFormat() || null === $user) {
+            throw new ApiProblem(415, 'unsupported_media_type', 'Send the credentials as application/json: {"email": "…", "password": "…"}');
         }
 
         return new JsonResponse(self::userJson($user));

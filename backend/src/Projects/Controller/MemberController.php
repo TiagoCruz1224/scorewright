@@ -53,12 +53,13 @@ final class MemberController
     }
 
     #[Route('/api/projects/{projectId}/members', name: 'member_invite', methods: ['POST'], requirements: ['projectId' => Requirement::UUID])]
-    public function invite(ProjectAccess $projectAccess, #[MapRequestPayload] InviteMemberRequest $request): JsonResponse
+    public function invite(ProjectAccess $projectAccess, #[MapRequestPayload(acceptFormat: 'json')] InviteMemberRequest $request): JsonResponse
     {
-        // Every invite tells the owner whether an account exists (§9), so attempts are limited per project and owner.
-        $limiter = $this->projectInviteLimiter->create($projectAccess->project->getId().':'.$projectAccess->user->getId());
-        if (!$limiter->consume()->isAccepted()) {
-            throw new ApiProblem(429, 'too_many_invites', 'Too many invites for this project: try again later');
+        // Every invite tells the owner whether an account exists (§9), so attempts are limited per inviting user,
+        // across all their projects: a new project must not mean a fresh allowance.
+        $limit = $this->projectInviteLimiter->create($projectAccess->user->getId()->toRfc4122())->consume();
+        if (!$limit->isAccepted()) {
+            throw ApiProblem::tooManyRequests('too_many_invites', 'Too many invites: try again later', $limit->getRetryAfter());
         }
 
         $user = $this->users->loadUserByIdentifier($request->email)
@@ -79,7 +80,7 @@ final class MemberController
     }
 
     #[Route('/api/projects/{projectId}/members/{userId}', name: 'member_update', methods: ['PATCH'], requirements: ['projectId' => Requirement::UUID, 'userId' => Requirement::UUID])]
-    public function update(ProjectAccess $projectAccess, string $userId, #[MapRequestPayload] UpdateMemberRequest $request): JsonResponse
+    public function update(ProjectAccess $projectAccess, string $userId, #[MapRequestPayload(acceptFormat: 'json')] UpdateMemberRequest $request): JsonResponse
     {
         $role = ProjectRole::from($request->role);
         $member = $this->entityManager->wrapInTransaction(function () use ($projectAccess, $userId, $role): ProjectMember {
