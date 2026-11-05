@@ -2,6 +2,7 @@ import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useR
 import { api } from '../api/client.js';
 import { attempt, ConfirmDelete, Field, StatusMessage } from '../components/forms.jsx';
 import { attemptUpload, ImportFileField, ImportProgress, UploadProblem } from '../components/imports.jsx';
+import { Icon } from '../components/icons.jsx';
 import { Breadcrumb, Pager, usePageTitle } from '../components/layout.jsx';
 
 const dateFormat = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' });
@@ -55,21 +56,27 @@ export function Runs() {
   return (
     <>
       <Breadcrumb items={crumbs(project).slice(0, 2).concat({ label: 'Runs' })} />
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <h1 className="mb-0">Runs</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Runs</h1>
+          <p className="page-meta">The answers of one model to the cases of a dataset version.</p>
+        </div>
         {/* With no runs yet, the empty state has the one button. */}
         {canWrite(project) && versions.length > 0 && (list.total > 0 || versionId !== '') && (
-          <Link className="btn btn-primary" to={versionId ? `new?datasetVersion=${versionId}` : 'new'}>
-            Import run
-          </Link>
+          <div className="actions">
+            <Link className="btn btn-primary" to={versionId ? `new?datasetVersion=${versionId}` : 'new'}>
+              <Icon name="upload" />
+              Import run
+            </Link>
+          </div>
         )}
       </div>
       <StatusMessage message={deleted ? 'The run was deleted.' : undefined} />
 
       {versions.length > 0 && (list.total > 0 || versionId !== '') && (
         // A GET form: the version goes into the URL, and only Update applies it (WCAG 3.2.2).
-        <Form method="get" className="flex flex-wrap items-end gap-x-3" key={versionId}>
-          <Field idPrefix="filter" name="datasetVersion" label="Dataset version" as="select" defaultValue={versionId}>
+        <Form method="get" aria-label="Filter the runs" className="panel-bar" key={versionId}>
+          <Field idPrefix="filter" name="datasetVersion" label="Dataset version" as="select" defaultValue={versionId} className="w-[280px]">
             <option value="">All versions</option>
             {versions.map((version) => (
               <option key={version.id} value={version.id}>
@@ -77,7 +84,7 @@ export function Runs() {
               </option>
             ))}
           </Field>
-          <button type="submit" className="btn mb-4">
+          <button type="submit" className="btn">
             Update
           </button>
         </Form>
@@ -85,23 +92,50 @@ export function Runs() {
 
       {list.total === 0 && <EmptyRuns project={project} hasVersions={versions.length > 0} filtered={versionId !== ''} />}
       {list.total > 0 && (
-        <ul className="grid gap-3">
-          {list.items.map((run) => (
-            <li key={run.id} className="card">
-              <h2 className="mb-1 text-base">
-                <Link className="inline-flex min-h-6 items-center" to={run.id}>
-                  {run.label}
-                </Link>
-              </h2>
-              <p className="muted mb-0 text-sm">
-                <bdi>{versionName(run.datasetVersion)}</bdi> · <strong className="text-text">{coverage(run)}</strong> · imported{' '}
-                <time dateTime={run.createdAt}>{formatDate(run.createdAt)}</time>
-              </p>
-            </li>
-          ))}
-        </ul>
+        <>
+          <div className="table-box" role="region" aria-label="Runs" tabIndex={0}>
+            <table className="tbl" style={{ minWidth: 680 }}>
+              <thead>
+                <tr>
+                  <th scope="col">Run</th>
+                  <th scope="col">Model</th>
+                  <th scope="col">Dataset version</th>
+                  <th scope="col" className="num">
+                    Coverage
+                  </th>
+                  <th scope="col">Imported</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.items.map((run) => (
+                  <tr key={run.id}>
+                    <th scope="row">
+                      <Link className="inline-flex min-h-6 items-center" to={run.id}>
+                        <bdi>{run.label}</bdi>
+                      </Link>
+                    </th>
+                    <td className="muted">{run.modelDescription.split('\n')[0]}</td>
+                    <td>
+                      <bdi>{versionName(run.datasetVersion)}</bdi>
+                    </td>
+                    {/* In words: "198 of 200", never a bar alone. */}
+                    <td className="num">
+                      <span className="mono">{n(run.answerCount)}</span> <span className="muted">of {n(run.datasetVersion.caseCount)}</span>
+                    </td>
+                    <td className="muted">
+                      <time dateTime={run.createdAt}>{formatDate(run.createdAt)}</time>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="panel-foot">
+            <span>Unanswered cases are not scored.</span>
+          </div>
+        </>
       )}
-      <Pager list={list} />
+      <Pager list={list} noun="Runs" />
     </>
   );
 }
@@ -113,25 +147,27 @@ function EmptyRuns({ project, hasVersions, filtered }) {
   if (!canWrite(project)) {
     return <p>{project.role === 'owner' ? 'No runs.' : 'The owner imports runs for this project.'}</p>;
   }
-  if (!hasVersions) {
-    return (
-      <div className="card max-w-xl">
-        <h2>Import a dataset first</h2>
-        <p>A run holds a model’s answers to the cases of a dataset version, so the project needs a dataset before its first run.</p>
-        <Link className="btn btn-primary" to={`/projects/${project.id}/datasets/new`}>
-          Import a dataset
-        </Link>
-      </div>
-    );
-  }
+  const [title, text, link] = hasVersions
+    ? ['Import your first run', 'A run holds the answers one model gave to the cases of a dataset version. It may leave some cases unanswered.', ['new', 'Import run']]
+    : [
+        'Import a dataset first',
+        'A run holds a model’s answers to the cases of a dataset version, so the project needs a dataset before its first run.',
+        [`/projects/${project.id}/datasets/new`, 'Import a dataset'],
+      ];
 
   return (
-    <div className="card max-w-xl">
-      <h2>Import your first run</h2>
-      <p>A run holds the answers one model gave to the cases of a dataset version. It may leave some cases unanswered.</p>
-      <Link className="btn btn-primary" to="new">
-        Import run
-      </Link>
+    <div className="empty">
+      <span className="empty-icon">
+        <Icon name="file" size="lg" />
+      </span>
+      <h2 className="empty-title">{title}</h2>
+      <p>{text}</p>
+      <div className="actions">
+        <Link className="btn btn-primary" to={link[0]}>
+          <Icon name={hasVersions ? 'upload' : 'plus'} />
+          {link[1]}
+        </Link>
+      </div>
     </div>
   );
 }
@@ -175,9 +211,14 @@ export function ImportRun() {
   usePageTitle('Import run', project.name);
 
   return (
-    <div className="max-w-3xl">
+    <div className="mx-auto max-w-[880px]">
       <Breadcrumb items={crumbs(project, { label: 'Import run' })} />
-      <h1>Import run</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Import run</h1>
+          {canWrite(project) && versions.length > 0 && <p className="page-meta">One answer per case id of the version. Nothing is saved unless every line is valid.</p>}
+        </div>
+      </div>
       {!canWrite(project) && <p>Only the owners of an active project import runs.</p>}
       {canWrite(project) && versions.length === 0 && (
         <p>
@@ -188,22 +229,58 @@ export function ImportRun() {
       {canWrite(project) && versions.length > 0 && (
         <>
           <UploadProblem problem={result?.problem} fileName={result?.fileName} unchanged="No run was created." />
-          <Form method="post" encType="multipart/form-data" noValidate className="max-w-xl">
-            <Field name="datasetVersion" label="Dataset version" as="select" defaultValue={selected || versions[0].id} hint="The version whose cases the run answers." problem={formProblem}>
-              {versions.map((version) => (
-                <option key={version.id} value={version.id}>
-                  {versionName(version)} ({n(version.caseCount)} cases)
-                </option>
-              ))}
-            </Field>
-            <Field name="label" label="Run label" required autoComplete="off" hint="Up to 100 characters, unique in the version, for example baseline-v1." problem={formProblem} />
-            <Field name="modelDescription" label="Model description" as="textarea" hint="Optional: the model, its version and its parameters." problem={formProblem} />
-            <ImportFileField problem={formProblem} rows="answers" columns={RUN_COLUMNS} />
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
-              Check and import
-            </button>
+          <Form method="post" encType="multipart/form-data" noValidate className="card">
+            <div className="card-body stack" style={{ gap: 20 }}>
+              <Field
+                name="datasetVersion"
+                label="Dataset version"
+                as="select"
+                defaultValue={selected || versions[0].id}
+                hint="The version whose cases the run answers."
+                className="max-w-[480px]"
+                problem={formProblem}
+              >
+                {versions.map((version) => (
+                  <option key={version.id} value={version.id}>
+                    {versionName(version)} · {n(version.caseCount)} cases
+                  </option>
+                ))}
+              </Field>
+              <Field
+                name="label"
+                label="Run label"
+                required
+                autoComplete="off"
+                controlClassName="input mono"
+                hint="Up to 100 characters, unique in the version, for example baseline-v1."
+                className="max-w-[480px]"
+                problem={formProblem}
+              />
+              <Field
+                name="modelDescription"
+                label={
+                  <>
+                    Model description <span className="opt">(optional)</span>
+                  </>
+                }
+                as="textarea"
+                hint="The model, its version and its parameters."
+                problem={formProblem}
+              />
+              <ImportFileField problem={formProblem} rows="answers" columns={RUN_COLUMNS} />
+            </div>
+            <div className="card-foot">
+              <button type="submit" className="btn btn-primary" disabled={submitting}>
+                <Icon name="upload" />
+                Check and import
+              </button>
+              <Link className="btn btn-ghost" to={`/projects/${project.id}/runs`}>
+                Cancel
+              </Link>
+              <ImportProgress />
+            </div>
           </Form>
-          <ImportProgress />
+          <p className="small muted mt-3">After an error the version, the label and the description stay filled in; only the file has to be chosen again.</p>
         </>
       )}
     </div>
@@ -238,9 +315,18 @@ export function Run() {
   usePageTitle(run.label, project.name);
 
   return (
-    <>
+    <div className="mx-auto max-w-[960px]">
       <Breadcrumb items={crumbs(project, { label: run.label })} />
-      <h1>{run.label}</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title font-mono">
+            <bdi>{run.label}</bdi>
+          </h1>
+          <p className="page-meta">
+            Imported <time dateTime={run.createdAt}>{formatDate(run.createdAt)}</time>
+          </p>
+        </div>
+      </div>
       <StatusMessage
         message={
           created ? (
@@ -251,31 +337,40 @@ export function Run() {
         }
       />
 
-      <dl className="mb-8 grid gap-x-6 gap-y-2 sm:grid-cols-[max-content_1fr]">
-        <dt className="font-semibold">Dataset version</dt>
-        <dd>
-          <Link to={`/projects/${project.id}/datasets/${version.dataset.id}?version=${version.id}`}><bdi>{versionName(version)}</bdi>
-          </Link>
-        </dd>
-        <dt className="font-semibold">Coverage</dt>
-        <dd>
-          {n(run.answerCount)} of {n(version.caseCount)} cases answered
-          {run.answerCount < version.caseCount && <span className="muted"> (unanswered cases are not scored)</span>}
-        </dd>
-        <dt className="font-semibold">Model description</dt>
-        <dd className="prewrap">{run.modelDescription || <span className="muted">None</span>}</dd>
-        <dt className="font-semibold">Imported</dt>
-        <dd>
-          <time dateTime={run.createdAt}>{formatDate(run.createdAt)}</time> from <bdi className="font-mono text-sm">{run.sourceFilename}</bdi>
-        </dd>
-      </dl>
-      <p className="muted">The answers appear when they are scored, in an evaluation.</p>
+      <section className="card" aria-label="About this run">
+        <dl className="kv card-body">
+          <dt>Dataset version</dt>
+          <dd>
+            <Link to={`/projects/${project.id}/datasets/${version.dataset.id}?version=${version.id}`}>
+              <bdi>{versionName(version)}</bdi>
+            </Link>
+          </dd>
+          <dt>Coverage</dt>
+          <dd>
+            <span className="mono">{n(run.answerCount)}</span> of <span className="mono">{n(version.caseCount)}</span> cases answered
+            {run.answerCount < version.caseCount && <span className="muted"> (unanswered cases are not scored)</span>}
+          </dd>
+          <dt>Model description</dt>
+          <dd className="prewrap">{run.modelDescription || <span className="muted">None</span>}</dd>
+          <dt>Source file</dt>
+          <dd>
+            <code>
+              <bdi>{run.sourceFilename}</bdi>
+            </code>
+          </dd>
+        </dl>
+      </section>
+      <p className="muted mt-4 flex items-center gap-2">
+        <Icon name="info" />
+        The answers appear when they are scored, in an evaluation.
+      </p>
 
       {canWrite(project) && (
         <ConfirmDelete
           key={result?.problem ? JSON.stringify(result.problem) : 'delete'}
           heading="Delete the run"
           button="Delete run"
+          note="Possible only while no evaluation uses it."
           question={
             <>
               Delete the run “<bdi>{run.label}</bdi>” with its {answers(run.answerCount)}? This cannot be undone.
@@ -284,6 +379,6 @@ export function Run() {
           problem={result?.problem}
         />
       )}
-    </>
+    </div>
   );
 }

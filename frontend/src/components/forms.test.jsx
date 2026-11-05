@@ -22,7 +22,8 @@ describe('ErrorSummary and Field', () => {
       </>,
     );
 
-    const summary = screen.getByRole('heading', { name: 'There is a problem' }).parentElement;
+    // The alert box takes the focus; the heading and the links are in its body.
+    const summary = screen.getByRole('heading', { name: 'There is a problem' }).closest('.alert');
     expect(document.activeElement).toBe(summary);
     const links = within(summary).getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual(problem.errors.map((error) => error.message));
@@ -31,7 +32,7 @@ describe('ErrorSummary and Field', () => {
     expect(document.activeElement).toBe(screen.getByLabelText('Password'));
   });
 
-  it('shows each error next to its field, linked with aria-describedby', () => {
+  it('shows each error next to its field, linked with aria-describedby: the error first, then the hint', () => {
     render(<Field name="password" label="Password" hint="At least 12 characters." problem={problem} />);
 
     const field = screen.getByLabelText('Password');
@@ -40,7 +41,10 @@ describe('ErrorSummary and Field', () => {
       .getAttribute('aria-describedby')
       .split(' ')
       .map((id) => document.getElementById(id).textContent);
-    expect(descriptions).toEqual(['At least 12 characters.', 'Error: This value is too short. It should have 12 characters or more.']);
+    expect(descriptions).toEqual(['Error: This value is too short. It should have 12 characters or more.', 'At least 12 characters.']);
+    // In the page too: label, control, error, hint (Graphite, proposal 3).
+    const order = [...field.closest('.field').children].map((child) => child.tagName + (child.className ? `.${child.className}` : ''));
+    expect(order).toEqual(['LABEL.label', 'INPUT', 'P.field-error', 'P.hint']);
   });
 
   it('leaves a field without errors alone', () => {

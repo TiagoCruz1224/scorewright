@@ -1,8 +1,16 @@
 import { Form, Link, Outlet, redirect, useActionData, useLoaderData, useNavigation, useRouteLoaderData } from 'react-router';
 import { api } from '../api/client.js';
 import { attempt, ErrorSummary, Field } from '../components/forms.jsx';
+import { Icon } from '../components/icons.jsx';
 import { Breadcrumb, Pager, usePageTitle } from '../components/layout.jsx';
-import { ROLES } from '../roles.jsx';
+import { RoleBadge, ROLES } from '../roles.jsx';
+
+/** "Support assistant" → "SA": the glyph of a project row. */
+const glyph = (name) => {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+
+  return (words.length > 1 ? words[0][0] + words[1][0] : [...(words[0] ?? '?')].slice(0, 2).join('')).toUpperCase();
+};
 
 export async function projectsLoader({ request }) {
   const url = new URL(request.url);
@@ -21,16 +29,24 @@ export function Projects() {
   usePageTitle(title);
 
   return (
-    <>
-      <Breadcrumb items={archived ? [{ label: 'Projects', to: '/projects' }, { label: 'Archived' }] : [{ label: 'Projects' }]} />
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <h1 className="mb-0">{title}</h1>
-        <div className="flex flex-wrap gap-2">
-          <Link className="btn" to={archived ? '/projects' : '/projects?archived=true'}>
+    <div className="mx-auto max-w-[960px]">
+      {/* The project list is the start: no trail above it, except from the archived ones back to it. */}
+      {archived && <Breadcrumb items={[{ label: 'Projects', to: '/projects' }, { label: 'Archived' }]} />}
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">{title}</h1>
+          <p className="page-meta">
+            {list.total.toLocaleString('en')} {archived ? 'archived' : 'active'} {list.total === 1 ? 'project' : 'projects'}
+          </p>
+        </div>
+        <div className="actions">
+          <Link className="btn btn-ghost" to={archived ? '/projects' : '/projects?archived=true'}>
+            <Icon name="archive" />
             {archived ? 'Show active projects' : 'Show archived projects'}
           </Link>
           {!archived && list.total > 0 && (
             <Link className="btn btn-primary" to="/projects/new">
+              <Icon name="plus" />
               Create project
             </Link>
           )}
@@ -39,31 +55,46 @@ export function Projects() {
 
       {list.total === 0 && archived && <p>No archived projects.</p>}
       {list.total === 0 && !archived && (
-        <div className="card max-w-xl">
-          <h2>Create your first project</h2>
+        <div className="empty">
+          <span className="empty-icon">
+            <Icon name="folder" size="lg" />
+          </span>
+          <h2 className="empty-title">Create your first project</h2>
           <p>A project holds the datasets, runs, rubrics and evaluations for one AI system, and the people who work on it.</p>
-          <Link className="btn btn-primary" to="/projects/new">
-            Create project
-          </Link>
+          <div className="actions">
+            <Link className="btn btn-primary" to="/projects/new">
+              <Icon name="plus" />
+              Create project
+            </Link>
+          </div>
         </div>
       )}
       {list.total > 0 && (
-        <ul className="grid gap-3">
+        <ul className="rows">
           {list.items.map((project) => (
-            <li key={project.id} className="card">
-              <h2 className="mb-1 text-base">
-                <Link className="inline-flex min-h-6 items-center" to={`/projects/${project.id}`}>
-                  {project.name}
-                </Link>
-              </h2>
-              <p className="muted mb-0 text-sm">Your role: {ROLES[project.role].label}</p>
-              {project.description && <p className="mt-2 mb-0 line-clamp-2">{project.description}</p>}
+            <li key={project.id} className="row">
+              <span className="glyph" aria-hidden="true">
+                {glyph(project.name)}
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-sm font-medium">
+                  <Link className="row-link" to={`/projects/${project.id}`}>
+                    <bdi>{project.name}</bdi>
+                  </Link>
+                </h2>
+                {project.description && <p className="row-desc">{project.description}</p>}
+              </div>
+              <span>
+                <span className="sr-only">Your role: </span>
+                <RoleBadge role={project.role} />
+              </span>
+              <Icon name="chev-right" />
             </li>
           ))}
         </ul>
       )}
-      <Pager list={list} />
-    </>
+      <Pager list={list} noun="Projects" />
+    </div>
   );
 }
 
@@ -83,18 +114,22 @@ export function NewProject() {
   usePageTitle('Create project');
 
   return (
-    <div className="max-w-xl">
+    <div className="mx-auto max-w-[880px]">
       <Breadcrumb items={[{ label: 'Projects', to: '/projects' }, { label: 'Create project' }]} />
-      <h1>Create project</h1>
+      <div className="page-head">
+        <h1 className="page-title">Create project</h1>
+      </div>
       <ErrorSummary problem={result?.problem} />
-      <Form method="post" noValidate>
-        <Field name="name" label="Name" required autoComplete="off" problem={result?.problem} />
-        <Field name="description" label="Description" as="textarea" hint="Optional. Up to 2,000 characters." problem={result?.problem} />
-        <div className="flex flex-wrap gap-3">
+      <Form method="post" noValidate className="card">
+        <div className="card-body stack" style={{ gap: 20 }}>
+          <Field name="name" label="Name" required autoComplete="off" className="max-w-[480px]" problem={result?.problem} />
+          <Field name="description" label="Description" as="textarea" hint="Optional. Up to 2,000 characters." problem={result?.problem} />
+        </div>
+        <div className="card-foot">
           <button type="submit" className="btn btn-primary" disabled={submitting}>
             Create project
           </button>
-          <Link className="btn" to="/projects">
+          <Link className="btn btn-ghost" to="/projects">
             Cancel
           </Link>
         </div>
@@ -115,8 +150,9 @@ export function ProjectLayout() {
   return (
     <>
       {project.archivedAt && (
-        <div className="notice">
-          <p className="mb-0">
+        <div className="notice mb-6">
+          <Icon name="archive" />
+          <p>
             <strong>This project is archived.</strong> It is read-only
             {project.role === 'owner' ? (
               <>
@@ -151,41 +187,65 @@ export function Overview() {
     { label: 'Import runs', done: hasRun, to: 'runs/new' },
     { label: 'Create a rubric', done: hasRubric, to: 'rubrics/new' },
   ];
+  const next = steps.find((step) => !step.done);
   usePageTitle('Overview', project.name);
 
   return (
     <>
       <Breadcrumb items={[{ label: 'Projects', to: '/projects' }, { label: project.name }]} />
-      <h1>{project.name}</h1>
-      {project.description ? <p className="prewrap">{project.description}</p> : <p className="muted">No description.</p>}
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">
+            <bdi>{project.name}</bdi>
+          </h1>
+          <p className="page-meta prewrap" style={{ maxWidth: '70ch' }}>
+            {project.description || 'No description.'}
+          </p>
+        </div>
+      </div>
 
-      {project.role === 'owner' && (
-        <section aria-labelledby="next-steps-heading" className="mt-8">
-          <h2 id="next-steps-heading">Next steps</h2>
-          {/* The last step (evaluation) joins this list with its screens. */}
-          <ol className="list-decimal pl-6">
-            {steps.map((step) => (
-              <li key={step.label}>
-                {step.done ? (
-                  <>
-                    {step.label}: <strong className="text-success">✓ done</strong>
-                  </>
-                ) : project.archivedAt ? (
-                  step.label
-                ) : (
-                  <Link to={`/projects/${project.id}/${step.to}`}>{step.label}</Link>
-                )}
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-
-      <h2 className="mt-8">Your role</h2>
-      <p>
-        <span className="badge mr-2">{role.label}</span>
-        {role.description}
-      </p>
+      <div className="grid-main">
+        <div className="stack" style={{ gap: 32 }}>
+          {project.role === 'owner' && (
+            <section className="card" aria-labelledby="next-steps-heading">
+              <div className="card-head">
+                <h2 className="card-title" id="next-steps-heading">
+                  Next steps
+                </h2>
+                <span className="small muted">
+                  {steps.filter((step) => step.done).length} of {steps.length} done
+                </span>
+              </div>
+              {/* The last step (evaluation) joins this list with its screens. */}
+              <ol className="steps">
+                {steps.map((step, index) => (
+                  <li key={step.label} className={step.done ? 'step is-done' : 'step'}>
+                    <span className="step-mark">{step.done ? <Icon name="check" /> : index + 1}</span>
+                    {step.done || project.archivedAt ? <span>{step.label}</span> : <Link to={`/projects/${project.id}/${step.to}`}>{step.label}</Link>}
+                    <span className="step-state">{step.done ? 'Done' : step === next && !project.archivedAt ? 'Next' : ''}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+        </div>
+        <aside className="card" aria-labelledby="role-heading">
+          <div className="card-head">
+            <h2 className="card-title" id="role-heading">
+              Your role
+            </h2>
+            <RoleBadge role={project.role} />
+          </div>
+          <div className="card-body stack" style={{ gap: 12 }}>
+            <p>{role.description}</p>
+            {project.role === 'owner' && (
+              <Link className="inline-flex min-h-6 items-center self-start" to={`/projects/${project.id}/members`}>
+                Manage members
+              </Link>
+            )}
+          </div>
+        </aside>
+      </div>
     </>
   );
 }

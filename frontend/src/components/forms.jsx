@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Form } from 'react-router';
 import { ApiError } from '../api/client.js';
+import { Icon } from './icons.jsx';
 
 /**
  * Runs an action's API calls. An API error becomes `{ problem }` for the form to show (on top of `extra`, which says
@@ -51,10 +52,14 @@ export function ErrorSummary({ problem, idPrefix = 'field' }) {
   const headingId = `${idPrefix}-error-summary`;
 
   return (
-    <div ref={ref} tabIndex={-1} className="error-summary" aria-labelledby={headingId}>
-      <h2 id={headingId}>There is a problem</h2>
-      {problem.errors.length > 0 ? (
-        <ul>
+    <div ref={ref} tabIndex={-1} className="alert mb-6" aria-labelledby={headingId}>
+      <Icon name="alert" size="lg" />
+      <div className="alert-body">
+        <h2 id={headingId} className="alert-title">
+          There is a problem
+        </h2>
+        {problem.errors.length > 0 ? (
+          <ul>
           {problem.errors.map((error, index) => (
             <li key={index}>
               <a
@@ -72,40 +77,55 @@ export function ErrorSummary({ problem, idPrefix = 'field' }) {
             </li>
           ))}
         </ul>
-      ) : (
-        <p>{problem.title}</p>
-      )}
-      {problem.status === 429 && <p>{retryAfterText(problem.retryAfter)}</p>}
+        ) : (
+          <p>{problem.title}</p>
+        )}
+        {problem.status === 429 && <p>{retryAfterText(problem.retryAfter)}</p>}
+      </div>
     </div>
   );
 }
 
 /**
- * A labelled control with its hint and its errors from the API's `errors[]` (the field path is the control's name).
- * `as` is "input" (the default), "textarea" or "select".
+ * A labelled control with its errors from the API's `errors[]` (the field path is the control's name) and its hint, in
+ * that order: label, control, error, hint (Graphite, proposal 3). `as` is "input" (the default), "textarea" or
+ * "select"; `className` goes on the field, `controlClassName` on the control (such as "input mono"), and `icon` puts an
+ * icon inside a text input (such as "search").
  */
-export function Field({ name, label, problem, hint, idPrefix = 'field', as: Control = 'input', children, ...props }) {
+export function Field({ name, label, problem, hint, idPrefix = 'field', as: Control = 'input', className, controlClassName, icon, children, ...props }) {
   const id = `${idPrefix}-${name}`;
   const errors = (problem?.errors ?? []).filter((error) => error.field === name);
-  const describedBy = [hint && `${id}-hint`, errors.length > 0 && `${id}-error`].filter(Boolean).join(' ');
+  const describedBy = [errors.length > 0 && `${id}-error`, hint && `${id}-hint`].filter(Boolean).join(' ');
 
   return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
+    <div className={className ? `field ${className}` : 'field'}>
+      <label className="label" htmlFor={id}>
+        {label}
+      </label>
+      {icon ? (
+        <div className="input-icon">
+          <Icon name={icon} />
+          <Control id={id} name={name} className={controlClassName ?? 'input'} aria-invalid={errors.length > 0 || undefined} aria-describedby={describedBy || undefined} {...props} />
+        </div>
+      ) : (
+        <Control id={id} name={name} className={controlClassName} aria-invalid={errors.length > 0 || undefined} aria-describedby={describedBy || undefined} {...props}>
+          {children}
+        </Control>
+      )}
+      {errors.length > 0 && (
+        <p id={`${id}-error`} className="field-error">
+          <Icon name="alert" />
+          <span>
+            <span className="sr-only">Error: </span>
+            {errors.map((error) => error.message).join(' ')}
+          </span>
+        </p>
+      )}
       {hint && (
         <p id={`${id}-hint`} className="hint">
           {hint}
         </p>
       )}
-      {errors.length > 0 && (
-        <p id={`${id}-error`} className="field-error">
-          <span className="sr-only">Error: </span>
-          {errors.map((error) => error.message).join(' ')}
-        </p>
-      )}
-      <Control id={id} name={name} aria-invalid={errors.length > 0 || undefined} aria-describedby={describedBy || undefined} {...props}>
-        {children}
-      </Control>
     </div>
   );
 }
@@ -113,7 +133,8 @@ export function Field({ name, label, problem, hint, idPrefix = 'field', as: Cont
 /** A status message (WCAG 4.1.3): always rendered, so screen readers announce the text when it changes. */
 export function StatusMessage({ message }) {
   return (
-    <p role="status" className={message ? 'font-semibold text-success' : 'sr-only'}>
+    <p role="status" className={message ? 'status-ok mb-4' : 'sr-only'}>
+      {message && <Icon name="check" />}
       {message ?? ''}
     </p>
   );
@@ -122,37 +143,47 @@ export function StatusMessage({ message }) {
 /**
  * A delete that asks first, on the page and not in a browser dialog (like removing a member): the button opens the
  * question with Delete (focused) and Cancel (back to the button). The form posts intent=delete to the page's action.
+ * `note` says when it is possible, such as "Possible only while no evaluation uses it.".
  */
-export function ConfirmDelete({ heading, button, question, problem }) {
+export function ConfirmDelete({ heading, button, question, note, problem }) {
   const [confirming, setConfirming] = useState(false);
 
   return (
-    <section className="max-w-xl">
-      <h2>{heading}</h2>
-      <ErrorSummary problem={problem} idPrefix="delete" />
-      {confirming ? (
-        <Form method="post" className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="intent" value="delete" />
-          <p className="mb-0">{question}</p>
-          <button type="submit" className="btn btn-danger" autoFocus>
-            Delete
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              flushSync(() => setConfirming(false));
-              document.getElementById('delete-start')?.focus();
-            }}
-          >
-            Cancel
-          </button>
-        </Form>
-      ) : (
-        <button id="delete-start" type="button" className="btn btn-danger" onClick={() => setConfirming(true)}>
-          {button}
-        </button>
-      )}
+    <section className="card section">
+      <div className="card-body stack" style={{ gap: 12 }}>
+        <ErrorSummary problem={problem} idPrefix="delete" />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="card-title">{heading}</h2>
+            {note && <p className="small muted">{note}</p>}
+          </div>
+          {!confirming && (
+            <button id="delete-start" type="button" className="btn btn-danger" onClick={() => setConfirming(true)}>
+              <Icon name="trash" />
+              {button}
+            </button>
+          )}
+        </div>
+        {confirming && (
+          <Form method="post" className="confirm">
+            <input type="hidden" name="intent" value="delete" />
+            <p>{question}</p>
+            <button type="submit" className="btn btn-danger btn-sm" autoFocus>
+              Delete
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                flushSync(() => setConfirming(false));
+                document.getElementById('delete-start')?.focus();
+              }}
+            >
+              Cancel
+            </button>
+          </Form>
+        )}
+      </div>
     </section>
   );
 }

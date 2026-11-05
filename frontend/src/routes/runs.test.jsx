@@ -28,8 +28,9 @@ describe('runs', () => {
   it('shows each run’s coverage in words', async () => {
     await renderApp('/projects/p1/runs', answers('viewer'));
 
-    const item = screen.getByRole('link', { name: 'baseline-v1' }).closest('li');
-    expect(item.textContent).toContain('Support cases v2 · 198 of 200 answered');
+    // A row of the runs table: the version, then the coverage in numbers and words (198 of 200).
+    const row = screen.getByRole('link', { name: 'baseline-v1' }).closest('tr');
+    expect([...row.querySelectorAll('td')].map((cell) => cell.textContent)).toEqual(['Model X', 'Support cases v2', '198 of 200', '5 Nov 2026']);
   });
 
   it('shows a viewer the runs read-only', async () => {
@@ -39,7 +40,7 @@ describe('runs', () => {
 
   it('shows a viewer a run without Delete, and an owner with it', async () => {
     await renderApp('/projects/p1/runs/r1', answers('viewer'));
-    screen.getByText('198 of 200 cases answered');
+    expect(screen.getAllByRole('definition').map((definition) => definition.textContent)).toContain('198 of 200 cases answered (unanswered cases are not scored)');
     expect(screen.queryByRole('button', { name: 'Delete run' })).toBeNull();
   });
 
@@ -62,7 +63,7 @@ describe('runs', () => {
     );
     const versionField = screen.getByLabelText('Dataset version');
     const label = screen.getByLabelText('Run label');
-    const description = screen.getByLabelText('Model description');
+    const description = screen.getByLabelText(/^Model description/);
     fireEvent.change(versionField, { target: { value: 'v1' } });
     fireEvent.change(label, { target: { value: 'baseline-v1' } });
     fireEvent.change(description, { target: { value: 'Model X\ntemperature 0' } });

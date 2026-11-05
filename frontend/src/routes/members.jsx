@@ -3,8 +3,9 @@ import { flushSync } from 'react-dom';
 import { Form, redirect, useActionData, useLoaderData, useRouteLoaderData } from 'react-router';
 import { api } from '../api/client.js';
 import { attempt, ErrorSummary, Field, StatusMessage } from '../components/forms.jsx';
-import { Breadcrumb, Pager, usePageTitle } from '../components/layout.jsx';
-import { RoleOptions, ROLES } from '../roles.jsx';
+import { Icon } from '../components/icons.jsx';
+import { Breadcrumb, initials, Pager, usePageTitle } from '../components/layout.jsx';
+import { RoleBadge, RoleOptions, ROLES } from '../roles.jsx';
 
 /** Owners only: the API answers 403 to anyone else, and the error page says so. */
 export async function membersLoader({ params, request }) {
@@ -55,72 +56,107 @@ export function Members() {
   const { user } = useRouteLoaderData('root');
   const result = useActionData();
   const canManage = project.role === 'owner' && !project.archivedAt;
+  const owners = list.items.filter((member) => member.role === 'owner').length;
+  const counted = (number, word) => `${number} ${word}${number === 1 ? '' : 's'}`;
   usePageTitle('Members', project.name);
 
   return (
     <>
       <Breadcrumb items={[{ label: 'Projects', to: '/projects' }, { label: project.name, to: `/projects/${project.id}` }, { label: 'Members' }]} />
-      <h1>Members</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Members</h1>
+          <p className="page-meta">
+            {counted(list.total, 'member')} · {counted(owners, 'owner')}
+          </p>
+        </div>
+      </div>
       <StatusMessage message={result?.ok} />
       {canManage && <InviteForm key={result?.intent === 'invite' && result.ok ? result.at : 'invite'} result={result?.intent === 'invite' ? result : null} />}
 
-      <h2>
-        {list.total} {list.total === 1 ? 'member' : 'members'}
-      </h2>
-      <ul className="grid gap-3">
-        {list.items.map((member) => (
-          <li key={member.userId} className="card">
-            <p className="mb-0 font-semibold">
-              <bdi>{member.displayName}</bdi>
-              {member.userId === user.id && ' (you)'}
-            </p>
-            <p className="muted mb-3 text-sm">
-              <bdi>{member.email}</bdi>
-            </p>
-            {canManage ? (
-              <MemberActions
-                key={`${member.role}-${result?.userId === member.userId ? result.at : ''}`}
-                member={member}
-                isSelf={member.userId === user.id}
-                result={result?.userId === member.userId ? result : null}
-              />
-            ) : (
-              <p className="mb-0">
-                <span className="badge">{ROLES[member.role].label}</span>
-              </p>
-            )}
-          </li>
-        ))}
-      </ul>
-      <Pager list={list} />
+      <section className="section">
+        <div className="section-head">
+          <h2 className="section-title" id="members-heading">
+            {counted(list.total, 'member')}
+          </h2>
+        </div>
+        <div className="table-box" role="region" aria-labelledby="members-heading" tabIndex={0}>
+          <table className="tbl" style={{ minWidth: canManage ? 640 : 420 }}>
+            <thead>
+              <tr>
+                <th scope="col">Member</th>
+                <th scope="col">Role</th>
+                {canManage && (
+                  <th scope="col">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {list.items.map((member) => (
+                <MemberRow
+                  key={`${member.userId}-${member.role}-${result?.userId === member.userId ? result.at : ''}`}
+                  member={member}
+                  isSelf={member.userId === user.id}
+                  canManage={canManage}
+                  result={result?.userId === member.userId ? result : null}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Pager list={list} noun="Members" />
+        {canManage && <p className="small muted mt-2.5">A project always keeps at least one owner. Removing yourself takes away your access.</p>}
+      </section>
     </>
   );
 }
 
 function InviteForm({ result }) {
   return (
-    <section aria-labelledby="invite-heading" className="card mb-8">
-      <h2 id="invite-heading">Invite a member</h2>
-      <p className="hint mb-4">Only people who already have an account can be added: ask them to register first.</p>
-      <ErrorSummary problem={result?.problem} idPrefix="invite" />
-      <Form method="post" noValidate>
-        <input type="hidden" name="intent" value="invite" />
-        <Field idPrefix="invite" name="email" label="Email" type="email" autoComplete="off" required problem={result?.problem} />
-        <Field idPrefix="invite" name="role" label="Role" as="select" defaultValue="viewer" problem={result?.problem}>
-          <RoleOptions />
-        </Field>
-        <button type="submit" className="btn btn-primary">
-          Invite
-        </button>
-      </Form>
+    <section aria-labelledby="invite-heading" className="card">
+      <div className="card-head">
+        <h2 className="card-title" id="invite-heading">
+          Invite a member
+        </h2>
+      </div>
+      <div className="card-body">
+        <ErrorSummary problem={result?.problem} idPrefix="invite" />
+        <Form method="post" noValidate className="flex flex-wrap items-start gap-3">
+          <input type="hidden" name="intent" value="invite" />
+          <Field
+            idPrefix="invite"
+            name="email"
+            label="Email"
+            type="email"
+            autoComplete="off"
+            required
+            className="flex-[1_1_280px]"
+            hint="Only people who already have an account can be added: ask them to register first."
+            problem={result?.problem}
+          />
+          <Field idPrefix="invite" name="role" label="Role" as="select" defaultValue="viewer" className="w-[180px]" problem={result?.problem}>
+            <RoleOptions />
+          </Field>
+          <button type="submit" className="btn btn-primary mt-[26px]">
+            <Icon name="mail" />
+            Invite
+          </button>
+        </Form>
+      </div>
     </section>
   );
 }
 
-/** Change the role, or remove the member after a confirmation on the page. Keyed by the last answer, so it resets. */
-function MemberActions({ member, isSelf, result }) {
+/**
+ * One member: who, the role (to change, for an owner) and Remove, which asks on the page first. Keyed by the last
+ * answer, so it resets.
+ */
+function MemberRow({ member, isSelf, canManage, result }) {
   const [confirming, setConfirming] = useState(false);
   const idPrefix = `member-${member.userId}`;
+  const roleErrors = (result?.problem?.errors ?? []).filter((error) => error.field === 'role');
   const hidden = (
     <>
       <input type="hidden" name="userId" value={member.userId} />
@@ -131,54 +167,88 @@ function MemberActions({ member, isSelf, result }) {
 
   return (
     <>
-      <ErrorSummary problem={result?.problem} idPrefix={idPrefix} />
-      <Form method="post" noValidate className="flex flex-wrap items-end gap-x-3">
-        <input type="hidden" name="intent" value="change-role" />
-        {hidden}
-        <Field
-          idPrefix={idPrefix}
-          name="role"
-          label={
-            <>
-              Role{' '}<span className="sr-only">of {member.displayName}</span>
-            </>
-          }
-          as="select"
-          defaultValue={member.role}
-          problem={result?.problem}
-        >
-          <RoleOptions />
-        </Field>
-        <button type="submit" className="btn mb-4">
-          Change role{' '}<span className="sr-only">of {member.displayName}</span>
-        </button>
-      </Form>
-
-      {confirming ? (
-        <Form method="post" className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="intent" value="remove" />
-          {hidden}
-          <p className="mb-0">
-            Remove <bdi>{member.displayName}</bdi> from the project?{isSelf && ' You will lose access to it.'}
-          </p>
-          <button type="submit" className="btn btn-danger" autoFocus>
-            Remove
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              flushSync(() => setConfirming(false));
-              document.getElementById(`${idPrefix}-remove`)?.focus();
-            }}
-          >
-            Cancel
-          </button>
-        </Form>
-      ) : (
-        <button id={`${idPrefix}-remove`} type="button" className="btn btn-danger" onClick={() => setConfirming(true)}>
-          Remove{' '}<span className="sr-only">{member.displayName}</span>
-        </button>
+      <tr>
+        <th scope="row" className="font-normal">
+          <div className="member">
+            <span className="avatar" aria-hidden="true">
+              {initials(member.displayName)}
+            </span>
+            <span>
+              <b className="font-medium">
+                <bdi>{member.displayName}</bdi>
+              </b>
+              {isSelf && <span className="muted"> (you)</span>}
+              <br />
+              <span className="small muted">
+                <bdi>{member.email}</bdi>
+              </span>
+            </span>
+          </div>
+        </th>
+        <td>
+          {canManage ? (
+            <Form method="post" noValidate className="flex flex-wrap items-center gap-2">
+              <input type="hidden" name="intent" value="change-role" />
+              {hidden}
+              <label className="sr-only" htmlFor={`${idPrefix}-role`}>
+                Role of {member.displayName}
+              </label>
+              <select
+                id={`${idPrefix}-role`}
+                name="role"
+                defaultValue={member.role}
+                style={{ width: 150, height: 32 }}
+                aria-invalid={roleErrors.length > 0 || undefined}
+              >
+                <RoleOptions />
+              </select>
+              <button type="submit" className="btn btn-sm">
+                Change role{' '}<span className="sr-only">of {member.displayName}</span>
+              </button>
+            </Form>
+          ) : (
+            <RoleBadge role={member.role} />
+          )}
+        </td>
+        {canManage && (
+          <td className="text-right">
+            {!confirming && (
+              <button id={`${idPrefix}-remove`} type="button" className="btn btn-ghost btn-sm text-danger" onClick={() => setConfirming(true)}>
+                <Icon name="trash" />
+                Remove{' '}<span className="sr-only">{member.displayName}</span>
+              </button>
+            )}
+          </td>
+        )}
+      </tr>
+      {(confirming || result?.problem) && (
+        <tr>
+          <td colSpan={canManage ? 3 : 2} className="bg-surface">
+            <ErrorSummary problem={result?.problem} idPrefix={idPrefix} />
+            {confirming && (
+              <Form method="post" className="confirm bg-bg">
+                <input type="hidden" name="intent" value="remove" />
+                {hidden}
+                <p>
+                  Remove <bdi className="font-semibold">{member.displayName}</bdi> from the project?{isSelf && ' You will lose access to it.'}
+                </p>
+                <button type="submit" className="btn btn-danger btn-sm" autoFocus>
+                  Remove
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => {
+                    flushSync(() => setConfirming(false));
+                    document.getElementById(`${idPrefix}-remove`)?.focus();
+                  }}
+                >
+                  Cancel
+                </button>
+              </Form>
+            )}
+          </td>
+        </tr>
       )}
     </>
   );

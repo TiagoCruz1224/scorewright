@@ -23,8 +23,8 @@ const answers = (role, rubricAnswer = rubric()) => ({
   '/api/projects/p1/rubrics/r1': rubricAnswer,
 });
 
-// The legends of the criteria's fieldsets (the account menu is a group too).
-const criterionNames = () => [...document.querySelectorAll('fieldset > legend')].map((legend) => legend.textContent);
+// The title in each criterion's legend: "Criterion 1: Tone" (its number box and kind badge sit beside it).
+const criterionNames = () => [...document.querySelectorAll('fieldset.crit > legend .crit-title')].map((title) => title.textContent);
 
 describe('rubrics', () => {
   it('moves a criterion with Move up and Move down, and keeps the focus on it (WCAG 2.5.7)', async () => {
@@ -46,6 +46,21 @@ describe('rubrics', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move down: Starts with Refund' }));
   });
 
+  it('adds a criterion and puts the focus on its kind, the chosen option of the segmented control', async () => {
+    await renderApp('/projects/p1/rubrics/r1/edit', answers('owner'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add criterion' }));
+
+    // The new one has no name yet: "Criterion 4" for screen readers, "No name yet" on the screen.
+    expect(criterionNames()).toHaveLength(4);
+    within(document.querySelectorAll('fieldset.crit')[3].querySelector('legend')).getByText('No name yet');
+    expect(criterionNames()[3]).toContain('Criterion 4');
+    const kind = within(screen.getAllByRole('group', { name: 'Kind' }).at(-1));
+    expect(document.activeElement).toBe(kind.getByRole('radio', { name: 'Scale 1–5' }));
+    expect(kind.getByRole('radio', { name: 'Scale 1–5' }).checked).toBe(true);
+    screen.getByText('Criterion 4 added.');
+  });
+
   it('shows each error next to its field, by the API’s path, even after the criterion moves', async () => {
     await renderApp('/projects/p1/rubrics/r1/edit', {
       ...answers('owner'),
@@ -59,7 +74,7 @@ describe('rubrics', () => {
           : Response.json(rubric()),
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save rubric' }));
 
     const summary = (await screen.findByRole('heading', { name: 'There is a problem' })).parentElement;
     const link = within(summary).getByRole('link', { name: 'This pattern does not compile: missing closing parenthesis at offset 7.' });
@@ -83,7 +98,7 @@ describe('rubrics', () => {
     expect(definitions).toContain('Regex: ^Refund');
     expect(screen.getByText('^Refund').tagName).toBe('BDI');
     expect(screen.getAllByText('1 (default)')).toHaveLength(2);
-    for (const name of ['Edit rubric', 'Duplicate', 'Delete rubric', 'Save']) {
+    for (const name of ['Edit rubric', 'Duplicate', 'Delete rubric', 'Save rubric']) {
       expect(screen.queryByRole('button', { name }) ?? screen.queryByRole('link', { name })).toBeNull();
     }
   });
@@ -95,14 +110,15 @@ describe('rubrics', () => {
     screen.getByText('Used in an evaluation: duplicate it to change it.');
     screen.getByRole('button', { name: 'Duplicate' });
     expect(screen.getByLabelText('Name of the copy').value).toBe('Support quality (copy)');
-    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save rubric' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Edit rubric' })).toBeNull();
   });
 
   it('lists a locked rubric with the words, not only a sign', async () => {
     await renderApp('/projects/p1/rubrics', answers('viewer', rubric({ lockedAt: '2026-11-05T12:00:00+00:00' })));
 
-    expect(screen.getByRole('link', { name: 'Support quality' }).closest('li').textContent).toBe('Support quality3 criteria · Locked: used in an evaluation');
+    const row = screen.getByRole('link', { name: 'Support quality' }).closest('tr');
+    expect([...row.querySelectorAll('td')].map((cell) => cell.textContent)).toEqual(['3', 'Locked: used in an evaluation']);
     expect(screen.queryByRole('link', { name: 'New rubric' })).toBeNull();
   });
 });

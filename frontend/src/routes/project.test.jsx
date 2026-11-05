@@ -74,15 +74,22 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
       '/api/projects/p1/rubrics?perPage=1': one,
     });
 
-    const steps = within(screen.getByRole('heading', { name: 'Next steps' }).parentElement).getAllByRole('listitem');
-    expect(steps.map((step) => step.textContent)).toEqual(['Import a dataset: ✓ done', 'Import runs', 'Create a rubric: ✓ done']);
+    const card = screen.getByRole('heading', { name: 'Next steps' }).closest('section');
+    const steps = within(card).getAllByRole('listitem');
+    // Done in words ("Done"), with the check as a picture only; the first step to do says "Next".
+    expect(steps.map((step) => [step.querySelector('.step-mark').textContent, step.textContent])).toEqual([
+      ['', 'Import a datasetDone'],
+      ['2', '2Import runsNext'],
+      ['', 'Create a rubricDone'],
+    ]);
+    within(card).getByText('2 of 3 done');
     expect(steps.map((step) => within(step).queryByRole('link')?.getAttribute('href') ?? null)).toEqual([null, '/projects/p1/runs/new', null]);
   });
 
   it('starts the owner’s next steps with importing a dataset, then runs, then a rubric', async () => {
     await renderPage('/projects/p1', { role: 'owner' });
 
-    const steps = within(screen.getByRole('heading', { name: 'Next steps' }).parentElement);
+    const steps = within(screen.getByRole('heading', { name: 'Next steps' }).closest('section'));
     expect(steps.getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
       ['Import a dataset', '/projects/p1/datasets/new'],
       ['Import runs', '/projects/p1/runs/new'],

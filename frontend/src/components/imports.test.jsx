@@ -30,10 +30,11 @@ describe('ImportRejected', () => {
     expect(document.activeElement).toBe(heading);
     const summary = heading.parentElement;
     expect(summary.textContent).toContain('support-cases.csv has 103 errors in 61 lines. Fix them and import the file again. Version v3 is unchanged.');
+    // Graphite: the count in bold, then the name; no "×", so a screen reader says "2 required value missing".
     expect(within(screen.getByRole('list', { name: 'Errors by type' })).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
-      '2 × required value missing',
-      '100 × text too long',
-      '1 × duplicate case id',
+      '2 required value missing',
+      '100 text too long',
+      '1 duplicate case id',
     ]);
     within(summary).getByRole('link', { name: 'CSV and JSON format' });
   });

@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
-import { Form, isRouteErrorResponse, Link, NavLink, Outlet, useLoaderData, useRouteError, useRouteLoaderData, useSearchParams } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Form, isRouteErrorResponse, Link, NavLink, Outlet, useLoaderData, useLocation, useRouteError, useRouteLoaderData, useSearchParams } from 'react-router';
 import { api, ApiError } from '../api/client.js';
+import { RoleBadge } from '../roles.jsx';
+import { BrandMark, Icon } from './icons.jsx';
 
 const APP_NAME = import.meta.env.VITE_APP_NAME;
 
@@ -24,9 +26,37 @@ export function usePageTitle(...parts) {
   }, [title]);
 }
 
+/**
+ * After moving to another page, the focus goes to the new page's h1, so keyboard and screen reader users start there
+ * instead of at the top of the document (SWQ2, note 4). A page that put the focus somewhere itself (an error summary,
+ * a rejected import) keeps it. Not on the first load: the browser starts at the top.
+ */
+function useFocusOnNavigation() {
+  const { pathname } = useLocation();
+  // The path the focus was last placed for: the first load (and React's second run of effects in development) is not a
+  // move to another page.
+  const placed = useRef(pathname);
+  useEffect(() => {
+    if (placed.current === pathname) {
+      return;
+    }
+    placed.current = pathname;
+    const main = document.getElementById('main');
+    if (main && main.contains(document.activeElement) && document.activeElement !== main) {
+      return;
+    }
+    const heading = main?.querySelector('h1');
+    if (heading) {
+      heading.setAttribute('tabindex', '-1');
+      heading.focus();
+    }
+  }, [pathname]);
+}
+
 export function RootLayout() {
   const { user } = useLoaderData();
   const project = useRouteLoaderData('project');
+  useFocusOnNavigation();
 
   return (
     <>
@@ -41,29 +71,44 @@ export function RootLayout() {
         Skip to main content
       </a>
       <header className="topbar">
-        <Link className="brand" to="/projects">
-          {APP_NAME}
-        </Link>
-        {project && <ProjectNav project={project} />}
-        <div className="topbar-end">
-          <ThemeToggle />
-          {user ? (
-            <AccountMenu user={user} />
-          ) : (
-            <nav aria-label="Account" className="topbar-nav">
-              <ul>
-                <li>
-                  <NavLink to="/sign-in">Sign in</NavLink>
-                </li>
-                <li>
-                  <NavLink to="/register">Register</NavLink>
-                </li>
-              </ul>
-            </nav>
+        <div className="topbar-row">
+          <Link className="brand" to="/projects">
+            <BrandMark />
+            {APP_NAME}
+          </Link>
+          {project && (
+            <>
+              <svg className="scope-sep" viewBox="0 0 16 24" aria-hidden="true">
+                <path d="M11 4 5 20" stroke="currentColor" strokeWidth="1.25" fill="none" />
+              </svg>
+              <span className="scope">
+                <Link className="inline-flex min-h-6 items-center" to={`/projects/${project.id}`}>
+                  <bdi>{project.name}</bdi>
+                </Link>
+                <span className="sr-only">Your role: </span>
+                <RoleBadge role={project.role} />
+              </span>
+            </>
           )}
+          <div className="topbar-end">
+            <ThemeToggle />
+            {user ? (
+              <AccountMenu user={user} />
+            ) : (
+              <nav aria-label="Account" className="actions">
+                <NavLink className="btn btn-ghost btn-sm" to="/sign-in">
+                  Sign in
+                </NavLink>
+                <NavLink className="btn btn-ghost btn-sm" to="/register">
+                  Register
+                </NavLink>
+              </nav>
+            )}
+          </div>
         </div>
+        {project && <ProjectNav project={project} />}
       </header>
-      <main id="main" tabIndex={-1} className="mx-auto max-w-5xl px-4 pt-6 pb-24 outline-none">
+      <main id="main" tabIndex={-1} className="page outline-none">
         <Outlet />
       </main>
     </>
@@ -73,34 +118,24 @@ export function RootLayout() {
 /** The project's sections; a section the user cannot use is not shown (UX §1.5). */
 function ProjectNav({ project }) {
   const base = `/projects/${project.id}`;
+  const sections = [
+    ['Overview', base],
+    ['Datasets', `${base}/datasets`],
+    ['Runs', `${base}/runs`],
+    ['Rubrics', `${base}/rubrics`],
+    ...(project.role === 'owner' ? [['Members', `${base}/members`], ['Settings', `${base}/settings`]] : []),
+  ];
 
   return (
-    <nav aria-label="Project" className="topbar-nav">
-      <ul>
-        <li>
-          <NavLink end to={base}>
-            Overview
-          </NavLink>
-        </li>
-        <li>
-          <NavLink to={`${base}/datasets`}>Datasets</NavLink>
-        </li>
-        <li>
-          <NavLink to={`${base}/runs`}>Runs</NavLink>
-        </li>
-        <li>
-          <NavLink to={`${base}/rubrics`}>Rubrics</NavLink>
-        </li>
-        {project.role === 'owner' && (
-          <>
-            <li>
-              <NavLink to={`${base}/members`}>Members</NavLink>
-            </li>
-            <li>
-              <NavLink to={`${base}/settings`}>Settings</NavLink>
-            </li>
-          </>
-        )}
+    <nav className="tabs-wrap" aria-label="Project">
+      <ul className="tabs">
+        {sections.map(([label, to]) => (
+          <li key={label}>
+            <NavLink className="tab" end={to === base} to={to}>
+              {label}
+            </NavLink>
+          </li>
+        ))}
       </ul>
     </nav>
   );
@@ -112,7 +147,8 @@ function ThemeToggle() {
   return (
     <button
       type="button"
-      className="btn"
+      className="btn btn-ghost btn-icon"
+      aria-label="Dark theme"
       aria-pressed={dark}
       onClick={() => {
         const theme = dark ? 'light' : 'dark';
@@ -125,24 +161,36 @@ function ThemeToggle() {
         setDark(!dark);
       }}
     >
-      Dark theme
+      <Icon name="moon" />
     </button>
   );
 }
 
+/** "Ana Lima" → "AL"; one word → its first two letters (avatars, aria-hidden). */
+export const initials = (name) => {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const letters = words.length > 1 ? [words[0][0], words.at(-1)[0]] : [...(words[0] ?? '?')].slice(0, 2);
+
+  return letters.join('').toUpperCase();
+};
+
 function AccountMenu({ user }) {
   return (
-    <details className="account">
-      <summary>
+    <details className="account-wrap">
+      <summary className="account">
+        <span className="avatar" aria-hidden="true">
+          {initials(user.displayName)}
+        </span>
         <span className="sr-only">Account: </span>
-        <bdi>{user.displayName}</bdi>
+        <bdi className="account-name">{user.displayName}</bdi>
+        <Icon name="chev-down" />
       </summary>
       <div className="account-panel">
-        <p className="muted text-sm">
+        <p className="small muted mb-3">
           Signed in as <bdi>{user.email}</bdi>
         </p>
         <Form method="post" action="/sign-out">
-          <button type="submit" className="btn">
+          <button type="submit" className="btn btn-sm">
             Sign out
           </button>
         </Form>
@@ -157,7 +205,7 @@ function AccountMenu({ user }) {
  */
 export function Breadcrumb({ items }) {
   return (
-    <nav aria-label="Breadcrumb" className="breadcrumb">
+    <nav aria-label="Breadcrumb" className="crumbs">
       <ol>
         {items.map((item, index) =>
           index < items.length - 1 ? (
@@ -177,8 +225,11 @@ export function Breadcrumb({ items }) {
   );
 }
 
-/** Previous and next links for a list answer ({page, perPage, total}), keeping the other query parameters. */
-export function Pager({ list }) {
+/**
+ * The foot of a list ({page, perPage, total}): "Cases 1–25 of 212" when `noun` is given, the page, and Previous and
+ * Next page, keeping the other query parameters. Nothing when the list fits on one page.
+ */
+export function Pager({ list, noun }) {
   const [searchParams] = useSearchParams();
   const pages = Math.ceil(list.total / list.perPage);
   if (pages <= 1) {
@@ -189,28 +240,34 @@ export function Pager({ list }) {
     params.set('page', String(page));
     return `?${params}`;
   };
+  const first = (list.page - 1) * list.perPage + 1;
 
   return (
-    <nav aria-label="Pages" className="mt-6 flex flex-wrap items-center gap-4">
-      {list.page > 1 && (
-        <Link className="btn" to={to(list.page - 1)}>
-          Previous page
-        </Link>
-      )}
-      <span>
-        Page {list.page} of {pages}
+    <nav aria-label="Pages" className="panel-foot">
+      <span>{noun && `${noun} ${first.toLocaleString('en')}–${Math.min(list.total, first + list.perPage - 1).toLocaleString('en')} of ${list.total.toLocaleString('en')}`}</span>
+      <span className="actions">
+        <span>
+          Page {list.page} of {pages}
+        </span>
+        {list.page > 1 && (
+          <Link className="btn btn-sm" to={to(list.page - 1)}>
+            <Icon name="chev-left" />
+            Previous page
+          </Link>
+        )}
+        {list.page < pages && (
+          <Link className="btn btn-sm" to={to(list.page + 1)}>
+            Next page
+            <Icon name="chev-right" />
+          </Link>
+        )}
       </span>
-      {list.page < pages && (
-        <Link className="btn" to={to(list.page + 1)}>
-          Next page
-        </Link>
-      )}
     </nav>
   );
 }
 
 export function Loading() {
-  return <p className="p-6">Loading…</p>;
+  return <p className="page muted">Loading…</p>;
 }
 
 /** What went wrong while loading a page: a missing project, a page for owners only, or anything else. */
@@ -226,12 +283,17 @@ export function ErrorPage() {
   usePageTitle(title);
 
   return (
-    <div className="p-4">
-      <h1>{title}</h1>
+    <div className="empty">
+      <span className="empty-icon">
+        <Icon name="alert" size="lg" />
+      </span>
+      <h1 className="empty-title">{title}</h1>
       <p>{text}</p>
-      <p>
-        <Link to="/projects">Go to your projects</Link>
-      </p>
+      <div className="actions">
+        <Link className="btn" to="/projects">
+          Go to your projects
+        </Link>
+      </div>
     </div>
   );
 }

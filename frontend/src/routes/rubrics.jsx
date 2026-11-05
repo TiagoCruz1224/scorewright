@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useRouteLoaderData, useSubmit } from 'react-router';
 import { api } from '../api/client.js';
 import { attempt, ConfirmDelete, ErrorSummary, Field, StatusMessage } from '../components/forms.jsx';
+import { Icon } from '../components/icons.jsx';
 import { Breadcrumb, Pager, usePageTitle } from '../components/layout.jsx';
 
 const n = (number) => number.toLocaleString('en');
@@ -19,7 +20,7 @@ const crumbs = (project, ...rest) => [
 ];
 
 const MAX_CRITERIA = 30;
-const KINDS = { scale_1_5: 'Manual: scale 1–5', pass_fail: 'Manual: pass or fail', automatic: 'Automatic check' };
+const KINDS = { scale_1_5: 'Scale 1–5', pass_fail: 'Pass or fail', automatic: 'Automatic check' };
 const CHECKS = {
   exact_match: 'Exact match with the reference',
   contains: 'Contains a text',
@@ -28,11 +29,16 @@ const CHECKS = {
   length: 'Length limits',
   valid_json: 'Valid JSON',
 };
+/** The short name of a check, after "Automatic · ". */
+const CHECK_NAMES = { exact_match: 'exact match', contains: 'contains', not_contains: 'does not contain', regex: 'regex', length: 'length', valid_json: 'valid JSON' };
 const GUIDANCE_HINTS = {
   scale_1_5: 'Required: what 1 and 5 mean, and how to choose between them.',
   pass_fail: 'Required: when an answer passes.',
   automatic: 'Optional: what the check is for.',
 };
+
+/** "Scale 1–5", "Automatic · regex": a criterion's kind, as its badge says it. */
+const kindName = (kind, checkType) => (kind === 'automatic' ? `Automatic · ${CHECK_NAMES[checkType] ?? 'check'}` : KINDS[kind]);
 
 /** "Regex: ^Refund", "Length: 1–500 characters": an automatic criterion's check in words, the typed parts isolated. */
 export function checkText({ checkType, checkParams: params }) {
@@ -55,7 +61,10 @@ export function checkText({ checkType, checkParams: params }) {
     case 'regex':
       return (
         <>
-          Regex: <bdi>{params.pattern}</bdi>
+          Regex:{' '}
+          <code>
+            <bdi>{params.pattern}</bdi>
+          </code>
           {ignoringCase}
         </>
       );
@@ -84,41 +93,63 @@ export function Rubrics() {
   return (
     <>
       <Breadcrumb items={crumbs(project).slice(0, 2).concat({ label: 'Rubrics' })} />
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <h1 className="mb-0">Rubrics</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Rubrics</h1>
+          <p className="page-meta">The criteria that answers are scored on.</p>
+        </div>
         {/* With no rubrics yet, the empty state has the one button. */}
         {canWrite(project) && list.total > 0 && (
-          <Link className="btn btn-primary" to="new">
-            New rubric
-          </Link>
+          <div className="actions">
+            <Link className="btn btn-primary" to="new">
+              <Icon name="plus" />
+              New rubric
+            </Link>
+          </div>
         )}
       </div>
       <StatusMessage message={deleted ? 'The rubric was deleted.' : undefined} />
 
       {list.total === 0 && <EmptyRubrics project={project} />}
       {list.total > 0 && (
-        <ul className="grid gap-3">
-          {list.items.map((rubric) => (
-            <li key={rubric.id} className="card">
-              <h2 className="mb-1 text-base">
-                <Link className="inline-flex min-h-6 items-center" to={rubric.id}>
-                  {rubric.name}
-                </Link>
-              </h2>
-              <p className="muted mb-0 text-sm">
-                {criteriaCount(rubric.criterionCount)}
-                {rubric.lockedAt && (
-                  <>
-                    {' · '}
-                    <strong className="text-text">Locked: used in an evaluation</strong>
-                  </>
-                )}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <div className="table-box" role="region" aria-label="Rubrics" tabIndex={0}>
+          <table className="tbl" style={{ minWidth: 560 }}>
+            <thead>
+              <tr>
+                <th scope="col">Rubric</th>
+                <th scope="col" className="num">
+                  Criteria
+                </th>
+                <th scope="col">State</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.items.map((rubric) => (
+                <tr key={rubric.id}>
+                  <th scope="row">
+                    <Link className="inline-flex min-h-6 items-center" to={rubric.id}>
+                      <bdi>{rubric.name}</bdi>
+                    </Link>
+                  </th>
+                  <td className="num mono">{n(rubric.criterionCount)}</td>
+                  <td>
+                    {/* The state in words, with the lock as a picture only. */}
+                    {rubric.lockedAt ? (
+                      <span className="pill pill-closed">
+                        <Icon name="lock" />
+                        Locked: used in an evaluation
+                      </span>
+                    ) : (
+                      <span className="small muted">Can be edited</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-      <Pager list={list} />
+      <Pager list={list} noun="Rubrics" />
     </>
   );
 }
@@ -129,12 +160,18 @@ function EmptyRubrics({ project }) {
   }
 
   return (
-    <div className="card max-w-xl">
-      <h2>Create your first rubric</h2>
+    <div className="empty">
+      <span className="empty-icon">
+        <Icon name="layers" size="lg" />
+      </span>
+      <h2 className="empty-title">Create your first rubric</h2>
       <p>A rubric lists the criteria that answers are scored on: by people, from 1 to 5 or pass or fail, or by an automatic check.</p>
-      <Link className="btn btn-primary" to="new">
-        New rubric
-      </Link>
+      <div className="actions">
+        <Link className="btn btn-primary" to="new">
+          <Icon name="plus" />
+          New rubric
+        </Link>
+      </div>
     </div>
   );
 }
@@ -162,11 +199,16 @@ export function NewRubric() {
   usePageTitle('New rubric', project.name);
 
   return (
-    <div className="max-w-3xl">
+    <>
       <Breadcrumb items={crumbs(project, { label: 'New rubric' })} />
-      <h1>New rubric</h1>
-      {canWrite(project) ? <RubricEditor /> : <p>Only the owners of an active project create rubrics.</p>}
-    </div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">New rubric</h1>
+          <p className="page-meta">Criteria are scored by people, from 1 to 5 or pass or fail, or by an automatic check.</p>
+        </div>
+      </div>
+      {canWrite(project) ? <RubricEditor cancelTo={`/projects/${project.id}/rubrics`} /> : <p>Only the owners of an active project create rubrics.</p>}
+    </>
   );
 }
 
@@ -194,11 +236,22 @@ export function EditRubric() {
   usePageTitle(`Edit ${rubric.name}`, project.name);
 
   return (
-    <div className="max-w-3xl">
+    <>
       <Breadcrumb items={crumbs(project, { label: rubric.name, to: `/projects/${project.id}/rubrics/${rubric.id}` }, { label: 'Edit' })} />
-      <h1>Edit {rubric.name}</h1>
-      {canWrite(project) ? <RubricEditor key={rubric.id} rubric={rubric} /> : <p>Only the owners of an active project edit rubrics.</p>}
-    </div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">
+            Edit <bdi>{rubric.name}</bdi>
+          </h1>
+          <p className="page-meta">No evaluation uses this rubric yet, so it can still change. Once one does, it can only be duplicated.</p>
+        </div>
+      </div>
+      {canWrite(project) ? (
+        <RubricEditor key={rubric.id} rubric={rubric} cancelTo={`/projects/${project.id}/rubrics/${rubric.id}`} />
+      ) : (
+        <p>Only the owners of an active project edit rubrics.</p>
+      )}
+    </>
   );
 }
 
@@ -268,11 +321,12 @@ function byKey(problem, savedKeys) {
 }
 
 /**
- * New rubric and Edit (UX §3.3): the name, then the criteria in order. Move up and Move down reorder them without
- * dragging (WCAG 2.5.7), and the focus stays on the moved criterion. Save sends the whole rubric; an error shows in the
- * summary and next to its field, and every field keeps what was typed (WCAG 3.3.7).
+ * New rubric and Edit (UX §3.3, Graphite proposal 2): an outline of the criteria beside the form, the name, then the
+ * criteria in order, and a save bar fixed at the bottom. Move up and Move down reorder them without dragging (WCAG
+ * 2.5.7), and the focus stays on the moved criterion. Save sends the whole rubric; an error shows in the summary, next
+ * to its field and in the outline, and every field keeps what was typed (WCAG 3.3.7).
  */
-function RubricEditor({ rubric }) {
+function RubricEditor({ rubric, cancelTo }) {
   const [name, setName] = useState(rubric?.name ?? '');
   const [criteria, setCriteria] = useState(() => (rubric?.criteria ?? []).map(editable));
   const [announcement, setAnnouncement] = useState();
@@ -281,6 +335,7 @@ function RubricEditor({ rubric }) {
   const submitting = useNavigation().state === 'submitting';
   const problem = useMemo(() => byKey(result?.problem, result?.keys ?? []), [result]);
   const listErrors = (problem?.errors ?? []).filter((error) => error.field === 'criteria');
+  const hasError = (key) => (problem?.errors ?? []).some((error) => error.field.startsWith(`criteria.${key}.`) || error.field === `criteria.${key}`);
 
   const title = (criterion, index) => criterion.name.trim() || `Criterion ${index + 1}`;
   const change = (key, changes) => setCriteria((list) => list.map((criterion) => (criterion.key === key ? { ...criterion, ...changes } : criterion)));
@@ -291,7 +346,8 @@ function RubricEditor({ rubric }) {
       setCriteria([...criteria, criterion]);
       setAnnouncement(`Criterion ${criteria.length + 1} added.`);
     });
-    document.getElementById(`field-criteria.${criterion.key}.kind`)?.focus();
+    // The new criterion's kind comes first: the focus goes to its chosen option.
+    document.querySelector(`input[name="criteria.${criterion.key}.kind"]:checked`)?.focus();
   }
 
   function move(index, step) {
@@ -324,137 +380,209 @@ function RubricEditor({ rubric }) {
   }
 
   return (
-    <>
-      <ErrorSummary problem={problem} />
-      <form onSubmit={save} noValidate>
-        <Field
-          name="name"
-          label="Rubric name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          autoComplete="off"
-          hint="Up to 200 characters, unique in the project."
-          problem={problem}
-        />
-
-        <h2 className="mt-8">Criteria</h2>
-        <p className="hint mb-4">At least one and at most {MAX_CRITERIA}, in the order evaluators see them.</p>
-        <StatusMessage message={announcement} />
-        {criteria.length === 0 && <p>No criteria yet.</p>}
-        <ol className="mb-4 grid gap-4">
+    <form onSubmit={save} noValidate>
+      <div className="editor-grid">
+        <nav className="crit-outline" aria-label="Criteria in this rubric">
+          <p className="small muted px-2 pb-1.5 font-medium">Criteria</p>
           {criteria.map((criterion, index) => (
-            <li key={criterion.key}>
-              <CriterionFields
-                criterion={criterion}
-                index={index}
-                count={criteria.length}
-                title={title(criterion, index)}
-                problem={problem}
-                onChange={(changes) => change(criterion.key, changes)}
-                onMove={(step) => move(index, step)}
-                onRemove={() => remove(index)}
-              />
-            </li>
+            <a key={criterion.key} href={`#crit-${criterion.key}`} className={hasError(criterion.key) ? 'is-error' : undefined}>
+              <span className="crit-n" aria-hidden="true">
+                {index + 1}
+              </span>
+              <bdi>{title(criterion, index)}</bdi>
+              {hasError(criterion.key) && (
+                <>
+                  <Icon name="alert" />
+                  <span className="sr-only">(has an error)</span>
+                </>
+              )}
+            </a>
           ))}
-        </ol>
-        {listErrors.length > 0 && (
-          <p id="criteria-error" className="field-error mb-2">
-            <span className="sr-only">Error: </span>
-            {listErrors.map((error) => error.message).join(' ')}
-          </p>
-        )}
-        <p>
-          <button
-            id="field-criteria"
-            type="button"
-            className="btn"
-            onClick={add}
-            disabled={criteria.length >= MAX_CRITERIA}
-            aria-describedby={listErrors.length > 0 ? 'criteria-error' : undefined}
-          >
-            Add criterion
-          </button>
-        </p>
+        </nav>
 
-        <button type="submit" className="btn btn-primary mt-4" disabled={submitting}>
-          Save
-        </button>
-      </form>
-    </>
+        <div className="flex min-w-0 flex-col gap-6" style={{ maxWidth: 780 }}>
+          <ErrorSummary problem={problem} />
+          <Field
+            name="name"
+            label="Rubric name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            required
+            autoComplete="off"
+            hint="Up to 200 characters, unique in the project."
+            className="max-w-[480px]"
+            problem={problem}
+          />
+
+          <div>
+            <div className="section-head mb-1">
+              <h2 className="section-title">Criteria</h2>
+              <p className="section-hint">
+                {criteria.length} of at most {MAX_CRITERIA}
+              </p>
+            </div>
+            <p className="hint">In the order evaluators see them. A rubric needs at least one.</p>
+            <StatusMessage message={announcement} />
+          </div>
+
+          {criteria.length > 0 && (
+            <ol className="flex flex-col gap-4">
+              {criteria.map((criterion, index) => (
+                <li key={criterion.key}>
+                  <CriterionFields
+                    criterion={criterion}
+                    index={index}
+                    count={criteria.length}
+                    title={title(criterion, index)}
+                    problem={problem}
+                    hasError={hasError(criterion.key)}
+                    onChange={(changes) => change(criterion.key, changes)}
+                    onMove={(step) => move(index, step)}
+                    onRemove={() => remove(index)}
+                  />
+                </li>
+              ))}
+            </ol>
+          )}
+          <div>
+            {listErrors.length > 0 && (
+              <p id="criteria-error" className="field-error mb-2">
+                <Icon name="alert" />
+                <span>
+                  <span className="sr-only">Error: </span>
+                  {listErrors.map((error) => error.message).join(' ')}
+                </span>
+              </p>
+            )}
+            <button
+              id="field-criteria"
+              type="button"
+              className="btn btn-dashed"
+              onClick={add}
+              disabled={criteria.length >= MAX_CRITERIA}
+              aria-describedby={listErrors.length > 0 ? 'criteria-error' : undefined}
+            >
+              <Icon name="plus" />
+              Add criterion
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="savebar mt-6">
+        <p className="small muted">Saving checks every criterion. Nothing changes until it passes.</p>
+        <div className="actions">
+          <Link className="btn" to={cancelTo}>
+            Cancel
+          </Link>
+          <button type="submit" className="btn btn-primary" disabled={submitting}>
+            Save rubric
+          </button>
+        </div>
+      </div>
+    </form>
   );
 }
 
 /** One criterion's fields in a fieldset (WCAG 1.3.1), with its Move and Remove buttons. */
-function CriterionFields({ criterion, index, count, title, problem, onChange, onMove, onRemove }) {
+function CriterionFields({ criterion, index, count, title, problem, hasError, onChange, onMove, onRemove }) {
   const path = (field) => `criteria.${criterion.key}.${field}`;
   const set = (field) => (event) => onChange({ [field]: event.target.type === 'checkbox' ? event.target.checked : event.target.value });
   const named = criterion.name.trim();
+  const kindId = `field-${path('kind')}`;
 
   return (
-    <fieldset className="card">
-      <legend className="px-1 font-semibold">
-        Criterion {index + 1}
-        {named && (
-          <>
-            : <bdi>{named}</bdi>
-          </>
-        )}
+    <fieldset className={hasError ? 'crit has-error' : 'crit'} id={`crit-${criterion.key}`}>
+      <legend>
+        <span className="crit-n" aria-hidden="true">
+          {index + 1}
+        </span>
+        <span className="crit-title">
+          <span className="sr-only">
+            Criterion {index + 1}
+            {named && ': '}
+          </span>
+          {named ? <bdi>{named}</bdi> : <span className="muted">No name yet</span>}
+        </span>
+        <span className="kind">{kindName(criterion.kind, criterion.checkType)}</span>
       </legend>
-      <Field name={path('kind')} label="Kind" as="select" value={criterion.kind} onChange={set('kind')} problem={problem}>
-        {Object.entries(KINDS).map(([value, text]) => (
-          <option key={value} value={value}>
-            {text}
-          </option>
-        ))}
-      </Field>
-      <Field name={path('name')} label="Name" value={criterion.name} onChange={set('name')} autoComplete="off" hint="Up to 200 characters, on one line." problem={problem} />
-      {criterion.kind === 'automatic' && (
-        <>
-          <Field name={path('checkType')} label="Check" as="select" value={criterion.checkType} onChange={set('checkType')} problem={problem}>
-            {Object.entries(CHECKS).map(([value, text]) => (
-              <option key={value} value={value}>
-                {text}
-              </option>
-            ))}
-          </Field>
-          <CheckParams criterion={criterion} path={path} set={set} problem={problem} />
-        </>
-      )}
-      <Field
-        name={path('guidance')}
-        label={criterion.kind === 'automatic' ? 'Guidance (optional)' : 'Guidance'}
-        as="textarea"
-        value={criterion.guidance}
-        onChange={set('guidance')}
-        hint={`${GUIDANCE_HINTS[criterion.kind]} Up to 5,000 characters.`}
-        problem={problem}
-      />
-      <Field
-        name={path('weight')}
-        label="Weight (optional)"
-        type="number"
-        inputMode="decimal"
-        step="any"
-        min="0"
-        max="100"
-        className="max-w-40"
-        value={criterion.weight}
-        onChange={set('weight')}
-        hint="Above 0 and at most 100. Empty counts as 1."
-        problem={problem}
-      />
       {/* The names say which criterion, after the visible words (WCAG 2.5.3): "Move up: Tone". */}
-      <div className="flex flex-wrap gap-2">
-        <button id={`move-up-${criterion.key}`} type="button" className="btn" disabled={index === 0} onClick={() => onMove(-1)} aria-label={`Move up: ${title}`}>
+      <div className="crit-tools">
+        <button id={`move-up-${criterion.key}`} type="button" className="btn btn-ghost btn-sm" disabled={index === 0} onClick={() => onMove(-1)} aria-label={`Move up: ${title}`}>
+          <Icon name="arrow-up" />
           Move up
         </button>
-        <button id={`move-down-${criterion.key}`} type="button" className="btn" disabled={index === count - 1} onClick={() => onMove(1)} aria-label={`Move down: ${title}`}>
+        <button id={`move-down-${criterion.key}`} type="button" className="btn btn-ghost btn-sm" disabled={index === count - 1} onClick={() => onMove(1)} aria-label={`Move down: ${title}`}>
+          <Icon name="arrow-down" />
           Move down
         </button>
-        <button type="button" className="btn btn-danger" onClick={onRemove} aria-label={`Remove: ${title}`}>
+        <button type="button" className="btn btn-ghost btn-sm text-danger" onClick={onRemove} aria-label={`Remove: ${title}`}>
+          <Icon name="trash" />
           Remove
         </button>
+      </div>
+      <div className="crit-body">
+        {/* Native radios in a segmented control; an error on the kind links to the group. */}
+        <fieldset className="field span-2" id={kindId} tabIndex={-1}>
+          <legend className="label mb-1.5">Kind</legend>
+          <div className="seg">
+            {Object.entries(KINDS).map(([value, text]) => (
+              <label key={value}>
+                <input type="radio" name={path('kind')} value={value} checked={criterion.kind === value} onChange={set('kind')} />
+                {text}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <Field name={path('name')} label="Name" value={criterion.name} onChange={set('name')} autoComplete="off" hint="Up to 200 characters, on one line." problem={problem} />
+        <Field
+          name={path('weight')}
+          label={
+            <>
+              Weight <span className="opt">(optional)</span>
+            </>
+          }
+          type="number"
+          inputMode="decimal"
+          step="any"
+          min="0"
+          max="100"
+          style={{ maxWidth: 120 }}
+          value={criterion.weight}
+          onChange={set('weight')}
+          hint="Above 0 and at most 100. Empty counts as 1."
+          problem={problem}
+        />
+        {criterion.kind === 'automatic' && (
+          <>
+            <Field name={path('checkType')} label="Check" as="select" value={criterion.checkType} onChange={set('checkType')} problem={problem}>
+              {Object.entries(CHECKS).map(([value, text]) => (
+                <option key={value} value={value}>
+                  {text}
+                </option>
+              ))}
+            </Field>
+            <CheckParams criterion={criterion} path={path} set={set} problem={problem} />
+          </>
+        )}
+        <Field
+          name={path('guidance')}
+          label={
+            criterion.kind === 'automatic' ? (
+              <>
+                Guidance <span className="opt">(optional)</span>
+              </>
+            ) : (
+              'Guidance'
+            )
+          }
+          as="textarea"
+          className="span-2"
+          value={criterion.guidance}
+          onChange={set('guidance')}
+          hint={`${GUIDANCE_HINTS[criterion.kind]} Up to 5,000 characters.`}
+          problem={problem}
+        />
       </div>
     </fieldset>
   );
@@ -463,37 +591,35 @@ function CriterionFields({ criterion, index, count, title, problem, onChange, on
 function CheckParams({ criterion, path, set, problem }) {
   const ignoreCaseId = `field-${path('checkParams.ignoreCase')}`;
   const ignoreCase = (
-    <div className="field flex-row items-center gap-2">
-      <input id={ignoreCaseId} type="checkbox" className="size-6" checked={criterion.ignoreCase} onChange={set('ignoreCase')} />
-      <label htmlFor={ignoreCaseId}>Ignore case</label>
-    </div>
+    <label className="check" htmlFor={ignoreCaseId}>
+      <input id={ignoreCaseId} type="checkbox" checked={criterion.ignoreCase} onChange={set('ignoreCase')} />
+      Ignore case
+    </label>
   );
 
   switch (criterion.checkType) {
     case 'exact_match':
       return (
-        <>
-          <p className="hint mb-4">
-            Passes when the answer equals the case’s reference, ignoring spaces at both ends. A case without a reference gets a check error, not a fail.
-          </p>
+        <div className="span-2 flex flex-col gap-2">
+          <p className="hint">Passes when the answer equals the case’s reference, ignoring spaces at both ends. A case without a reference gets a check error, not a fail.</p>
           {ignoreCase}
-        </>
+        </div>
       );
     case 'contains':
     case 'not_contains':
       return (
-        <>
+        <div className="span-2 flex flex-col gap-2">
           <Field name={path('checkParams.text')} label="Text" value={criterion.text} onChange={set('text')} autoComplete="off" hint="Up to 500 characters." problem={problem} />
           {ignoreCase}
-        </>
+        </div>
       );
     case 'regex':
       return (
-        <>
+        <div className="span-2 flex flex-col gap-2">
           <Field
             name={path('checkParams.pattern')}
             label="Pattern"
-            className="font-mono"
+            controlClassName="input mono"
             value={criterion.pattern}
             onChange={set('pattern')}
             autoComplete="off"
@@ -502,20 +628,42 @@ function CheckParams({ criterion, path, set, problem }) {
             problem={problem}
           />
           {ignoreCase}
-        </>
+        </div>
       );
     case 'length':
       return (
         <>
-          <p className="hint mb-2">A minimum, a maximum or both, in characters, from 0 to 50,000.</p>
-          <div className="flex flex-wrap gap-x-4">
-            <Field name={path('checkParams.min')} label="Minimum" type="number" min="0" max="50000" step="1" className="max-w-40" value={criterion.min} onChange={set('min')} problem={problem} />
-            <Field name={path('checkParams.max')} label="Maximum" type="number" min="0" max="50000" step="1" className="max-w-40" value={criterion.max} onChange={set('max')} problem={problem} />
-          </div>
+          <Field
+            name={path('checkParams.min')}
+            label="Minimum"
+            type="number"
+            min="0"
+            max="50000"
+            step="1"
+            controlClassName="input mono"
+            style={{ maxWidth: 160 }}
+            value={criterion.min}
+            onChange={set('min')}
+            problem={problem}
+          />
+          <Field
+            name={path('checkParams.max')}
+            label="Maximum"
+            type="number"
+            min="0"
+            max="50000"
+            step="1"
+            controlClassName="input mono"
+            style={{ maxWidth: 160 }}
+            value={criterion.max}
+            onChange={set('max')}
+            problem={problem}
+          />
+          <p className="hint span-2 -mt-2">A minimum, a maximum or both: characters of the answer, from 0 to 50,000.</p>
         </>
       );
     default:
-      return <p className="hint mb-4">Passes when the whole answer is valid JSON.</p>;
+      return <p className="hint span-2">Passes when the whole answer is valid JSON.</p>;
   }
 }
 
@@ -567,25 +715,39 @@ export function Rubric() {
     saved: 'Changes saved.',
     duplicated: <>Copy created: {name}. You can edit it.</>,
   };
+  const automatic = rubric.criteria.filter((criterion) => criterion.kind === 'automatic').length;
   usePageTitle(rubric.name, project.name);
 
   return (
-    <>
+    <div className="mx-auto max-w-[960px]">
       <Breadcrumb items={crumbs(project, { label: rubric.name })} />
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <h1 className="mb-0">{rubric.name}</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">{name}</h1>
+          <p className="page-meta">
+            <span>{criteriaCount(rubric.criteria.length)}</span>
+            <span className="dot">{rubric.criteria.length - automatic} manual</span>
+            <span className="dot">{automatic} automatic</span>
+          </p>
+        </div>
         {owner && !rubric.lockedAt && (
-          <Link className="btn btn-primary" to="edit">
-            Edit rubric
-          </Link>
+          <div className="actions">
+            <Link className="btn btn-primary" to="edit">
+              <Icon name="pen" />
+              Edit rubric
+            </Link>
+          </div>
         )}
       </div>
       <StatusMessage message={messages[status]} />
       {rubric.lockedAt && (
-        <p className="notice">{owner ? 'Used in an evaluation: duplicate it to change it.' : 'Locked: used in an evaluation, so it no longer changes.'}</p>
+        <div className="notice mb-6">
+          <Icon name="lock" />
+          <p>{owner ? 'Used in an evaluation: duplicate it to change it.' : 'Locked: used in an evaluation, so it no longer changes.'}</p>
+        </div>
       )}
       {rubric.duplicatedFrom && (
-        <p className="muted">
+        <p className="muted mb-4">
           A copy of{' '}
           <Link to={`/projects/${project.id}/rubrics/${rubric.duplicatedFrom.id}`}>
             <bdi>{rubric.duplicatedFrom.name}</bdi>
@@ -594,30 +756,40 @@ export function Rubric() {
         </p>
       )}
 
-      <section aria-labelledby="criteria-heading" className="mb-8">
-        <h2 id="criteria-heading">Criteria</h2>
-        <ol className="grid gap-3">
+      <section>
+        <div className="section-head">
+          <h2 className="section-title" id="criteria-heading">
+            Criteria
+          </h2>
+          <p className="section-hint">In the order evaluators see them.</p>
+        </div>
+        <ol className="stack" style={{ gap: 12 }}>
           {rubric.criteria.map((criterion, index) => (
             <li key={criterion.id} className="card">
-              <h3 className="mb-2 text-base">
-                {index + 1}. <bdi>{criterion.name}</bdi>
-              </h3>
-              <dl className="mb-0 grid gap-x-6 gap-y-1 sm:grid-cols-[max-content_1fr]">
-                <dt className="font-semibold">Kind</dt>
-                <dd>{KINDS[criterion.kind]}</dd>
+              <div className="card-head">
+                <h3 className="card-title flex items-center gap-2.5">
+                  <span className="crit-n" aria-hidden="true">
+                    {index + 1}
+                  </span>
+                  <span className="sr-only">{index + 1}. </span>
+                  <bdi>{criterion.name}</bdi>
+                </h3>
+                <span className="kind">{kindName(criterion.kind, criterion.checkType)}</span>
+              </div>
+              <dl className="kv card-body">
                 {criterion.kind === 'automatic' && (
                   <>
-                    <dt className="font-semibold">Check</dt>
-                    <dd className="break-words">{checkText(criterion)}</dd>
+                    <dt>Check</dt>
+                    <dd>{checkText(criterion)}</dd>
                   </>
                 )}
                 {criterion.guidance !== '' && (
                   <>
-                    <dt className="font-semibold">Guidance</dt>
+                    <dt>Guidance</dt>
                     <dd className="prewrap">{criterion.guidance}</dd>
                   </>
                 )}
-                <dt className="font-semibold">Weight</dt>
+                <dt>Weight</dt>
                 <dd>{criterion.weight === null ? '1 (default)' : n(criterion.weight)}</dd>
               </dl>
             </li>
@@ -631,6 +803,7 @@ export function Rubric() {
           key={`delete-${rubric.id}-${result?.form === 'delete' ? JSON.stringify(result.problem) : ''}`}
           heading="Delete the rubric"
           button="Delete rubric"
+          note="Possible only while no evaluation uses it."
           question={
             <>
               Delete the rubric “<bdi>{rubric.name}</bdi>” with its {criteriaCount(rubric.criteria.length)}? This cannot be undone.
@@ -639,7 +812,7 @@ export function Rubric() {
           problem={result?.form === 'delete' ? result.problem : undefined}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -650,17 +823,24 @@ function DuplicateRubric({ rubric, problem }) {
   const submitting = useNavigation().state === 'submitting';
 
   return (
-    <section className="mb-8 max-w-xl">
-      <h2>Duplicate the rubric</h2>
-      <p>The copy has the same criteria and is not used in any evaluation, so you can edit it.</p>
-      <ErrorSummary problem={problem} idPrefix="duplicate" />
-      <Form method="post" noValidate>
-        <input type="hidden" name="intent" value="duplicate" />
-        <Field idPrefix="duplicate" name="name" label="Name of the copy" defaultValue={copyName(rubric.name)} required autoComplete="off" problem={problem} />
+    <Form method="post" noValidate className="card section" aria-labelledby="duplicate-heading">
+      <input type="hidden" name="intent" value="duplicate" />
+      <div className="card-head">
+        <h2 className="card-title" id="duplicate-heading">
+          Duplicate the rubric
+        </h2>
+      </div>
+      <div className="card-body stack">
+        <ErrorSummary problem={problem} idPrefix="duplicate" />
+        <p className="muted">The copy has the same criteria and is not used in any evaluation, so you can edit it.</p>
+        <Field idPrefix="duplicate" name="name" label="Name of the copy" defaultValue={copyName(rubric.name)} required autoComplete="off" className="max-w-[480px]" problem={problem} />
+      </div>
+      <div className="card-foot">
         <button type="submit" className="btn" disabled={submitting}>
+          <Icon name="copy" />
           Duplicate
         </button>
-      </Form>
-    </section>
+      </div>
+    </Form>
   );
 }

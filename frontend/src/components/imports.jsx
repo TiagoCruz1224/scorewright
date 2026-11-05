@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Link, useNavigation } from 'react-router';
 import { IMPORT_ERROR_NAMES, LIMITS, MAX_FILE_SIZE } from '../importFormat.js';
-import { attempt, ErrorSummary, Field, StatusMessage } from './forms.jsx';
+import { attempt, ErrorSummary, Field } from './forms.jsx';
+import { Icon } from './icons.jsx';
 
 const count = (number, word) => `${number.toLocaleString('en')} ${word}${number === 1 ? '' : 's'}`;
 
@@ -22,6 +23,8 @@ export function ImportFileField({ problem, rows = 'cases', columns = DATASET_COL
       label="CSV or JSON file"
       type="file"
       accept=".csv,.json"
+      controlClassName="input file"
+      style={{ maxWidth: 480 }}
       problem={problem}
       hint={
         <>
@@ -72,7 +75,12 @@ export function ImportProgress() {
   const navigation = useNavigation();
   const file = navigation.state === 'submitting' ? navigation.formData?.get('file') : null;
 
-  return <StatusMessage message={file ? `Checking ${file.name || 'the file'} and importing it…` : undefined} />;
+  return (
+    <p role="status" className={file ? 'small muted ml-auto inline-flex items-center gap-1.5' : 'sr-only'}>
+      {file && <Icon name="clock" />}
+      {file ? `Checking ${file.name || 'the file'} and importing it…` : ''}
+    </p>
+  );
 }
 
 /**
@@ -108,58 +116,72 @@ export function ImportRejected({ problem, fileName, unchanged }) {
   return (
     <>
       <section className="alert" aria-labelledby="import-rejected-heading">
-        <h2 id="import-rejected-heading" ref={heading} tabIndex={-1}>
-          Import rejected: nothing was saved
-        </h2>
-        <p>
-          <strong className="font-mono">{fileName}</strong> has{' '}
-          <strong>
-            {count(problem.errorCount, 'error')} in {count(problem.affectedLines, where)}
-          </strong>
-          . Fix them and import the file again. {unchanged}
-        </p>
-        <ul className="mb-3 flex flex-wrap gap-2" aria-label="Errors by type">
-          {Object.entries(problem.errorCountsByCode).map(([code, number]) => (
-            <li key={code} className="badge text-danger">
-              {number.toLocaleString('en')} × {IMPORT_ERROR_NAMES[code] ?? code}
-            </li>
-          ))}
-        </ul>
-        <div className="flex flex-wrap gap-2">
-          <a
-            className="btn btn-primary"
-            href="#field-file"
-            onClick={(event) => {
-              event.preventDefault();
-              document.getElementById('field-file')?.focus();
-            }}
-          >
-            Choose another file
-          </a>
-          <Link className="btn" to="/import-format">
-            CSV and JSON format
-          </Link>
+        <Icon name="alert" size="lg" />
+        <div className="alert-body">
+          <h2 id="import-rejected-heading" className="alert-title" ref={heading} tabIndex={-1}>
+            Import rejected: nothing was saved
+          </h2>
+          <p>
+            <code>
+              <bdi>{fileName}</bdi>
+            </code>{' '}
+            has{' '}
+            <strong>
+              {count(problem.errorCount, 'error')} in {count(problem.affectedLines, where)}
+            </strong>
+            . Fix them and import the file again. {unchanged}
+          </p>
+          <ul className="counts list-none flex-row p-0" aria-label="Errors by type">
+            {Object.entries(problem.errorCountsByCode).map(([code, number]) => (
+              <li key={code} className="count-chip">
+                <b>{number.toLocaleString('en')}</b> {IMPORT_ERROR_NAMES[code] ?? code}
+              </li>
+            ))}
+          </ul>
+          <div className="actions mt-1">
+            <a
+              className="btn btn-primary btn-sm"
+              href="#field-file"
+              onClick={(event) => {
+                event.preventDefault();
+                document.getElementById('field-file')?.focus();
+              }}
+            >
+              Choose another file
+            </a>
+            <Link className="btn btn-sm" to="/import-format">
+              CSV and JSON format
+            </Link>
+          </div>
         </div>
       </section>
 
-      <section className="mb-8">
-        <h2 id="import-errors-heading">Errors by {where}</h2>
-        <p className="muted">
-          {byItem ? 'Items are numbered from 1, in the order of the array.' : 'Line numbers count the header as line 1, as in a spreadsheet.'}
-        </p>
-        <div className="table-scroll" role="region" tabIndex={0} aria-labelledby="import-errors-heading">
-          <table>
+      <section className="section">
+        <div className="section-head">
+          <h2 className="section-title" id="import-errors-heading">
+            Errors by {where}
+          </h2>
+          <p className="section-hint">
+            {byItem ? 'Items are numbered from 1, in the order of the array.' : 'Line numbers count the header as line 1, as in a spreadsheet.'}
+          </p>
+        </div>
+        <div className="table-box" role="region" tabIndex={0} aria-labelledby="import-errors-heading">
+          <table className="tbl" style={{ minWidth: 600 }}>
             <thead>
               <tr>
-                <th scope="col">{byItem ? 'Item' : 'Line'}</th>
-                <th scope="col">Field</th>
+                <th scope="col" className="num" style={{ width: 72 }}>
+                  {byItem ? 'Item' : 'Line'}
+                </th>
+                <th scope="col" style={{ width: 130 }}>
+                  Field
+                </th>
                 <th scope="col">Problem</th>
               </tr>
             </thead>
             <tbody>
               {problem.errors.map((error, index) => (
                 <tr key={index}>
-                  <th scope="row" className="num">
+                  <th scope="row" className="num mono">
                     {error[where] ?? 'File'}
                   </th>
                   <td>{error.field ? <code>{error.field}</code> : '—'}</td>
@@ -172,7 +194,7 @@ export function ImportRejected({ problem, fileName, unchanged }) {
             </tbody>
           </table>
         </div>
-        {problem.truncated && <p className="mt-3">and {count(more, 'more error')} of the same kinds</p>}
+        {problem.truncated && <p className="panel-foot">and {count(more, 'more error')} of the same kinds</p>}
       </section>
     </>
   );

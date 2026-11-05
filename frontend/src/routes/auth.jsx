@@ -20,18 +20,20 @@ export function SignIn() {
   usePageTitle('Sign in');
 
   return (
-    <div className="max-w-md">
-      <h1>Sign in</h1>
-      {searchParams.has('next') && !result && <p>Sign in to continue to that page.</p>}
-      <ErrorSummary problem={result?.problem} />
-      <Form method="post" noValidate>
+    <div className="auth">
+      <Form method="post" noValidate className="auth-card">
+        <div>
+          <h1 className="auth-title">Sign in</h1>
+          {searchParams.has('next') && !result && <p className="muted mt-1">Sign in to continue to that page.</p>}
+        </div>
+        <ErrorSummary problem={result?.problem} />
         <Field name="email" label="Email" type="email" autoComplete="email" required problem={result?.problem} />
         <Field name="password" label="Password" type="password" autoComplete="current-password" required problem={result?.problem} />
-        <button type="submit" className="btn btn-primary" disabled={submitting}>
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
           Sign in
         </button>
       </Form>
-      <p className="mt-6">
+      <p className="auth-alt">
         No account yet? <Link to="/register">Register</Link>
       </p>
     </div>
@@ -57,10 +59,10 @@ export function Register() {
   usePageTitle('Register');
 
   return (
-    <div className="max-w-md">
-      <h1>Create an account</h1>
-      <ErrorSummary problem={result?.problem} />
-      <Form method="post" noValidate>
+    <div className="auth">
+      <Form method="post" noValidate className="auth-card">
+        <h1 className="auth-title">Create an account</h1>
+        <ErrorSummary problem={result?.problem} />
         <Field name="displayName" label="Name" autoComplete="name" required hint="Shown to the other members of your projects." problem={result?.problem} />
         <Field name="email" label="Email" type="email" autoComplete="email" required problem={result?.problem} />
         <Field
@@ -72,11 +74,11 @@ export function Register() {
           hint="At least 12 characters. A few random words are easy to remember and hard to guess."
           problem={result?.problem}
         />
-        <button type="submit" className="btn btn-primary" disabled={submitting}>
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
           Create account
         </button>
       </Form>
-      <p className="mt-6">
+      <p className="auth-alt">
         Already have an account? <Link to="/sign-in">Sign in</Link>
       </p>
     </div>

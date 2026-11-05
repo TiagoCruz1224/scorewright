@@ -2,6 +2,7 @@ import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useR
 import { api } from '../api/client.js';
 import { attempt, ConfirmDelete, Field, StatusMessage } from '../components/forms.jsx';
 import { attemptUpload, ImportFileField, ImportProgress, UploadProblem } from '../components/imports.jsx';
+import { Icon } from '../components/icons.jsx';
 import { Breadcrumb, Pager, usePageTitle } from '../components/layout.jsx';
 
 const dateFormat = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' });
@@ -50,48 +51,73 @@ export function Datasets() {
   return (
     <>
       <Breadcrumb items={crumbs(project).slice(0, 2).concat({ label: 'Datasets' })} />
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <h1 className="mb-0">Datasets</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Datasets</h1>
+          <p className="page-meta">
+            {list.total.toLocaleString('en')} {list.total === 1 ? 'dataset' : 'datasets'}
+          </p>
+        </div>
         {canWrite(project) && list.total > 0 && (
-          <Link className="btn btn-primary" to="new">
-            New dataset
-          </Link>
+          <div className="actions">
+            <Link className="btn btn-primary" to="new">
+              <Icon name="plus" />
+              New dataset
+            </Link>
+          </div>
         )}
       </div>
       <StatusMessage message={deleted ? 'The dataset was deleted.' : undefined} />
 
       {list.total === 0 &&
         (canWrite(project) ? (
-          <div className="card max-w-xl">
-            <h2>Import your first dataset</h2>
+          <div className="empty">
+            <span className="empty-icon">
+              <Icon name="file" size="lg" />
+            </span>
+            <h2 className="empty-title">Import your first dataset</h2>
             <p>A dataset is a list of test cases: the inputs to send to the AI system, with optional reference answers and tags.</p>
-            <Link className="btn btn-primary" to="new">
-              New dataset
-            </Link>
+            <div className="actions">
+              <Link className="btn btn-primary" to="new">
+                <Icon name="plus" />
+                New dataset
+              </Link>
+            </div>
           </div>
         ) : (
           <p>{project.role === 'owner' ? 'No datasets.' : 'The owner imports datasets for this project.'}</p>
         ))}
       {list.total > 0 && (
-        <ul className="grid gap-3">
-          {list.items.map((dataset) => (
-            <li key={dataset.id} className="card">
-              <h2 className="mb-1 text-base">
-                <Link className="inline-flex min-h-6 items-center" to={dataset.id}>
-                  {dataset.name}
-                </Link>
-              </h2>
-              {dataset.latestVersion && (
-                <p className="muted mb-0 text-sm">
-                  Latest version v{dataset.latestVersion.number}: {cases(dataset.latestVersion.caseCount)}, imported{' '}
-                  <time dateTime={dataset.latestVersion.createdAt}>{formatDate(dataset.latestVersion.createdAt)}</time>
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div className="table-box" role="region" aria-label="Datasets" tabIndex={0}>
+          <table className="tbl" style={{ minWidth: 600 }}>
+            <thead>
+              <tr>
+                <th scope="col">Dataset</th>
+                <th scope="col">Latest version</th>
+                <th scope="col" className="num">
+                  Cases
+                </th>
+                <th scope="col">Imported</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.items.map((dataset) => (
+                <tr key={dataset.id}>
+                  <th scope="row">
+                    <Link className="inline-flex min-h-6 items-center" to={dataset.id}>
+                      <bdi>{dataset.name}</bdi>
+                    </Link>
+                  </th>
+                  <td>{dataset.latestVersion && <span className="tag">v{dataset.latestVersion.number}</span>}</td>
+                  <td className="num mono">{dataset.latestVersion?.caseCount.toLocaleString('en')}</td>
+                  <td className="muted">{dataset.latestVersion && <time dateTime={dataset.latestVersion.createdAt}>{formatDate(dataset.latestVersion.createdAt)}</time>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-      <Pager list={list} />
+      <Pager list={list} noun="Datasets" />
     </>
   );
 }
@@ -120,20 +146,33 @@ export function NewDataset() {
   usePageTitle('New dataset', project.name);
 
   return (
-    <div className="max-w-3xl">
+    <div className="mx-auto max-w-[880px]">
       <Breadcrumb items={crumbs(project, { label: 'New dataset' })} />
-      <h1>New dataset</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">New dataset</h1>
+          {canWrite(project) && <p className="page-meta">The file becomes version v1. Nothing is saved unless every case is valid.</p>}
+        </div>
+      </div>
       {canWrite(project) ? (
         <>
           <UploadProblem problem={result?.problem} fileName={result?.fileName} unchanged="No dataset was created." />
-          <Form method="post" encType="multipart/form-data" noValidate className="max-w-xl">
-            <Field name="name" label="Name" required autoComplete="off" hint="Up to 200 characters, unique in the project." problem={formProblem} />
-            <ImportFileField problem={formProblem} />
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
-              Check and import
-            </button>
+          <Form method="post" encType="multipart/form-data" noValidate className="card section">
+            <div className="card-body stack" style={{ gap: 20 }}>
+              <Field name="name" label="Name" required autoComplete="off" hint="Up to 200 characters, unique in the project." className="max-w-[480px]" problem={formProblem} />
+              <ImportFileField problem={formProblem} />
+            </div>
+            <div className="card-foot">
+              <button type="submit" className="btn btn-primary" disabled={submitting}>
+                <Icon name="upload" />
+                Check and import
+              </button>
+              <Link className="btn btn-ghost" to={`/projects/${project.id}/datasets`}>
+                Cancel
+              </Link>
+              <ImportProgress />
+            </div>
           </Form>
-          <ImportProgress />
         </>
       ) : (
         <p>Only the owners of an active project import datasets.</p>
@@ -186,17 +225,32 @@ export function Dataset() {
   const project = useRouteLoaderData('project');
   const result = useActionData();
   const filtered = filters.tag !== '' || filters.q !== '';
+  const latest = dataset.versions[0];
   usePageTitle(dataset.name, project.name);
 
   return (
     <>
       <Breadcrumb items={crumbs(project, { label: dataset.name })} />
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <h1 className="mb-0">{dataset.name}</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">
+            <bdi>{dataset.name}</bdi>
+          </h1>
+          <p className="page-meta">
+            <span>
+              {dataset.versions.length} {dataset.versions.length === 1 ? 'version' : 'versions'}
+            </span>
+            <span className="dot">Latest v{latest.number}</span>
+            <span className="dot">{cases(latest.caseCount)}</span>
+          </p>
+        </div>
         {canWrite(project) && (
-          <Link className="btn btn-primary" to="import">
-            Import new version
-          </Link>
+          <div className="actions">
+            <Link className="btn btn-primary" to="import">
+              <Icon name="upload" />
+              Import new version
+            </Link>
+          </div>
         )}
       </div>
       <StatusMessage
@@ -212,42 +266,81 @@ export function Dataset() {
         }
       />
 
-      <section className="mb-8">
-        <h2 id="versions-heading">Versions</h2>
-        <ul className="grid gap-1">
-          {dataset.versions.map((candidate) => (
-            <li key={candidate.id}>
-              <Link className="inline-flex min-h-6 items-center" to={`?version=${candidate.id}`} aria-current={candidate.id === version.id ? 'true' : undefined}>
-                v{candidate.number}
-              </Link>
-              : {cases(candidate.caseCount)}, from{' '}
-              <bdi className="font-mono text-sm">{candidate.sourceFilename}</bdi>, imported{' '}
-              <time dateTime={candidate.createdAt}>{formatDate(candidate.createdAt)}</time>
-              {candidate.id === version.id && <strong> (shown below)</strong>}
-            </li>
-          ))}
-        </ul>
+      <section>
+        <div className="section-head">
+          <h2 className="section-title" id="versions-heading">
+            Versions
+          </h2>
+          <p className="section-hint">Each import is a new version. Versions never change.</p>
+        </div>
+        <div className="table-box" role="region" aria-labelledby="versions-heading" tabIndex={0}>
+          <table className="tbl" style={{ minWidth: 560 }}>
+            <thead>
+              <tr>
+                <th scope="col" style={{ width: 120 }}>
+                  Version
+                </th>
+                <th scope="col" className="num" style={{ width: 110 }}>
+                  Cases
+                </th>
+                <th scope="col">Source file</th>
+                <th scope="col">Imported</th>
+                <th scope="col">
+                  <span className="sr-only">Shown</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {dataset.versions.map((candidate) => (
+                <tr key={candidate.id} className={candidate.id === version.id ? 'is-current' : undefined}>
+                  <th scope="row">
+                    {/* At least 24 px tall (WCAG 2.5.8). */}
+                    <Link className="inline-flex min-h-6 min-w-6 items-center" to={`?version=${candidate.id}`} aria-current={candidate.id === version.id ? 'true' : undefined}>
+                      v{candidate.number}
+                    </Link>
+                  </th>
+                  <td className="num mono">{candidate.caseCount.toLocaleString('en')}</td>
+                  <td className="mono">
+                    <bdi>{candidate.sourceFilename}</bdi>
+                  </td>
+                  <td className="muted">
+                    <time dateTime={candidate.createdAt}>{formatDate(candidate.createdAt)}</time>
+                  </td>
+                  <td className="text-right">{candidate.id === version.id && <span className="tag">Shown below</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
-      <section className="mb-8">
-        <h2 id="cases-heading" tabIndex={-1}>
-          Cases of v{version.number}
-        </h2>
+      <section className="section">
+        <div className="section-head">
+          <h2 className="section-title" id="cases-heading" tabIndex={-1}>
+            Cases of v{version.number}
+          </h2>
+          <p className="section-hint" role="status">
+            {filtered ? `${cases(list.total)} match the filters.` : `${cases(list.total)}.`}
+          </p>
+        </div>
         {/* A GET form: the filters go into the URL, and only the Update button applies them (WCAG 3.2.2). */}
-        <Form method="get" role="search" aria-label="Filter the cases" className="flex flex-wrap items-end gap-x-3" key={`${version.id}\n${filters.tag}\n${filters.q}`}>
+        <Form method="get" role="search" aria-label="Filter the cases" className="panel-bar" key={`${version.id}\n${filters.tag}\n${filters.q}`}>
           <input type="hidden" name="version" value={version.id} />
-          <Field idPrefix="filter" name="tag" label="Tag" defaultValue={filters.tag} hint="Exactly this tag." />
-          <Field idPrefix="filter" name="q" label="Text" defaultValue={filters.q} hint="In the input, the reference or the case id." />
-          <div className="mb-4 flex flex-wrap items-center gap-3">
+          <Field idPrefix="filter" name="tag" label="Tag" defaultValue={filters.tag} hint="Exactly this tag." className="w-[200px]" />
+          <Field idPrefix="filter" name="q" label="Text" defaultValue={filters.q} hint="In the input, the reference or the case id." className="flex-[1_1_260px]" icon="search" />
+          <div className="actions pb-6">
             <button type="submit" className="btn">
               Update
             </button>
-            {filtered && <Link to={`?version=${version.id}`}>Clear the filters</Link>}
+            {filtered && (
+              <Link className="link-btn" to={`?version=${version.id}`}>
+                Clear the filters
+              </Link>
+            )}
           </div>
         </Form>
-        <p>{filtered ? `${cases(list.total)} match the filters.` : `${cases(list.total)}.`}</p>
-        {list.total > 0 && <CaseTable items={list.items} />}
-        <Pager list={list} />
+        <CaseTable items={list.items} />
+        <Pager list={list} noun="Cases" />
       </section>
 
       {canWrite(project) && (
@@ -255,6 +348,7 @@ export function Dataset() {
           key={result?.problem ? JSON.stringify(result.problem) : 'delete'}
           heading="Delete the dataset"
           button="Delete dataset"
+          note="Removes it with its versions, their cases and runs. Possible only while no evaluation uses it."
           question={
             <>
               Delete “<bdi>{dataset.name}</bdi>” with{' '}
@@ -272,17 +366,28 @@ export function Dataset() {
 /** The cases as text only (pre-wrap, never HTML), in a region that scrolls sideways on a narrow screen. */
 export function CaseTable({ items }) {
   return (
-    <div className="table-scroll" role="region" tabIndex={0} aria-labelledby="cases-heading">
-      <table className="min-w-[40rem]">
+    <div className="table-box" role="region" tabIndex={0} aria-labelledby="cases-heading">
+      <table className="tbl" style={{ minWidth: 640 }}>
         <thead>
           <tr>
-            <th scope="col">Case</th>
+            <th scope="col" style={{ width: 110 }}>
+              Case
+            </th>
             <th scope="col">Input</th>
             <th scope="col">Reference</th>
-            <th scope="col">Tags</th>
+            <th scope="col" style={{ width: 190 }}>
+              Tags
+            </th>
           </tr>
         </thead>
         <tbody>
+          {items.length === 0 && (
+            <tr>
+              <td colSpan={4} className="muted">
+                No cases.
+              </td>
+            </tr>
+          )}
           {items.map((testCase) => (
             <tr key={testCase.id}>
               <th scope="row">
@@ -292,9 +397,9 @@ export function CaseTable({ items }) {
               <td className="prewrap">{testCase.reference ?? <span className="muted">None</span>}</td>
               <td>
                 {testCase.tags.length > 0 ? (
-                  <ul className="flex flex-wrap gap-1">
+                  <ul className="tags">
                     {testCase.tags.map((tag) => (
-                      <li key={tag} className="badge">
+                      <li key={tag} className="tag">
                         <bdi>{tag}</bdi>
                       </li>
                     ))}
@@ -310,7 +415,6 @@ export function CaseTable({ items }) {
     </div>
   );
 }
-
 
 export async function importVersionLoader({ params, request }) {
   return api(`/api/projects/${params.projectId}/datasets/${params.datasetId}`, { request });
@@ -339,22 +443,40 @@ export function ImportVersion() {
   usePageTitle('Import new version', dataset.name, project.name);
 
   return (
-    <div className="max-w-3xl">
+    <div className="mx-auto max-w-[960px]">
       <Breadcrumb items={crumbs(project, { label: dataset.name, to: `/projects/${project.id}/datasets/${dataset.id}` }, { label: 'Import new version' })} />
-      <h1>Import new version</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Import new version</h1>
+          {canWrite(project) && (
+            <p className="page-meta">
+              <span>
+                The file becomes version v{dataset.versions[0].number + 1} of “<bdi>{dataset.name}</bdi>”. Earlier versions do not change.
+              </span>
+            </p>
+          )}
+        </div>
+      </div>
       {canWrite(project) ? (
         <>
-          <p>
-            The file becomes version v{dataset.versions[0].number + 1} of “<bdi>{dataset.name}</bdi>”. Earlier versions do not change.
-          </p>
           <UploadProblem problem={result?.problem} fileName={result?.fileName} unchanged={`Version v${dataset.versions[0].number} is unchanged.`} />
-          <Form method="post" encType="multipart/form-data" noValidate className="max-w-xl">
-            <ImportFileField problem={formProblem} />
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
-              Check and import
-            </button>
+          <Form method="post" encType="multipart/form-data" noValidate className="card section">
+            {result?.problem?.code === 'import_rejected' && (
+              <div className="card-head">
+                <h2 className="card-title">Try another file</h2>
+              </div>
+            )}
+            <div className="card-body">
+              <ImportFileField problem={formProblem} />
+            </div>
+            <div className="card-foot">
+              <button type="submit" className="btn btn-primary" disabled={submitting}>
+                <Icon name="upload" />
+                Check and import
+              </button>
+              <ImportProgress />
+            </div>
           </Form>
-          <ImportProgress />
         </>
       ) : (
         <p>Only the owners of an active project import datasets.</p>
