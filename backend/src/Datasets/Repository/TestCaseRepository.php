@@ -59,6 +59,22 @@ final class TestCaseRepository extends ServiceEntityRepository
     }
 
     /**
+     * The version's case keys and their case ids, for a run import to find each answer's case.
+     *
+     * @return array<string, string> case key => test case id
+     */
+    public function idsByKey(DatasetVersion $version): array
+    {
+        /** @var array<string, string> $ids */
+        $ids = $this->getEntityManager()->getConnection()->fetchAllKeyValue(
+            'SELECT case_key, id FROM test_case WHERE dataset_version_id = ?',
+            [$version->getId()->toRfc4122()],
+        );
+
+        return $ids;
+    }
+
+    /**
      * Cases in file order; $tag matches one tag exactly, $text is a case-insensitive substring of the input, the
      * reference or the case key.
      *

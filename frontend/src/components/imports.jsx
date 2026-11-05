@@ -5,8 +5,17 @@ import { ErrorSummary, Field, StatusMessage } from './forms.jsx';
 
 const count = (number, word) => `${number.toLocaleString('en')} ${word}${number === 1 ? '' : 's'}`;
 
-/** The file field, with the limits and the format before it (UX §4.3, prevention), linked by aria-describedby. */
-export function ImportFileField({ problem }) {
+const DATASET_COLUMNS = (
+  <>
+    Columns: <code>input</code>, and optionally <code>id</code>, <code>reference</code>, <code>tags</code> and <code>metadata</code> (a JSON object).
+  </>
+);
+
+/**
+ * The file field, with the limits and the format before it (UX §4.3, prevention), linked by aria-describedby.
+ * `rows` and `columns` describe the file: cases and the dataset columns unless given.
+ */
+export function ImportFileField({ problem, rows = 'cases', columns = DATASET_COLUMNS }) {
   return (
     <Field
       name="file"
@@ -16,8 +25,7 @@ export function ImportFileField({ problem }) {
       problem={problem}
       hint={
         <>
-          UTF-8, up to {MAX_FILE_SIZE} and {LIMITS.maxCases.toLocaleString('en')} cases. Columns: <code>input</code>, and optionally <code>id</code>,{' '}
-          <code>reference</code>, <code>tags</code> and <code>metadata</code> (a JSON object). See the <Link to="/import-format">CSV and JSON format</Link>.
+          UTF-8, up to {MAX_FILE_SIZE} and {LIMITS.maxCases.toLocaleString('en')} {rows}. {columns} See the <Link to="/import-format">CSV and JSON format</Link>.
         </>
       }
     />
@@ -34,11 +42,11 @@ export function ImportProgress() {
 
 /**
  * The problem of an import: the rejected-import summary and table, a file over the limit, or a form error.
- * `unchangedVersion` is the number of the dataset's latest version, if it has one.
+ * `unchanged` says what stayed as it was ("Version v3 is unchanged.", "No run was created.").
  */
-export function UploadProblem({ problem, fileName, unchangedVersion }) {
+export function UploadProblem({ problem, fileName, unchanged }) {
   if (problem?.code === 'import_rejected') {
-    return <ImportRejected problem={problem} fileName={fileName} unchangedVersion={unchangedVersion} />;
+    return <ImportRejected problem={problem} fileName={fileName} unchanged={unchanged} />;
   }
   if (problem?.status === 413) {
     return <ErrorSummary problem={{ ...problem, title: `The file is larger than ${MAX_FILE_SIZE}, the limit for an import. Split it into several files.` }} />;
@@ -51,7 +59,7 @@ export function UploadProblem({ problem, fileName, unchangedVersion }) {
  * Import rejected (UX §4.3): what happened and that nothing was saved, the counts by type, then every listed error
  * with how to fix it. The heading takes the focus, so it is read first after submitting.
  */
-export function ImportRejected({ problem, fileName, unchangedVersion }) {
+export function ImportRejected({ problem, fileName, unchanged }) {
   const heading = useRef(null);
   useEffect(() => {
     heading.current?.focus();
@@ -73,7 +81,7 @@ export function ImportRejected({ problem, fileName, unchangedVersion }) {
           <strong>
             {count(problem.errorCount, 'error')} in {count(problem.affectedLines, where)}
           </strong>
-          . Fix them and import the file again. {unchangedVersion ? `Version v${unchangedVersion} is unchanged.` : 'No dataset was created.'}
+          . Fix them and import the file again. {unchanged}
         </p>
         <ul className="mb-3 flex flex-wrap gap-2" aria-label="Errors by type">
           {Object.entries(problem.errorCountsByCode).map(([code, number]) => (

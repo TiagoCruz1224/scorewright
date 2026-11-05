@@ -17,8 +17,13 @@ final class ImportErrors
     public const MAX_LISTED = 100;
     public const MAX_EXCERPT_LENGTH = 80;
 
-    /** @var list<array<string, int|string|null>> */
-    private array $listed = [];
+    /**
+     * Every error, so the list can follow the file's order: a reader records the file's structure first and the
+     * values after, but the first errors in the file are the ones to list.
+     *
+     * @var list<array<string, int|string|null>>
+     */
+    private array $errors = [];
     private int $count = 0;
     /** @var array<int, true> */
     private array $affected = [];
@@ -43,16 +48,14 @@ final class ImportErrors
         if (null !== $location) {
             $this->affected[$location] = true;
         }
-        if (\count($this->listed) < self::MAX_LISTED) {
-            $this->listed[] = [
-                $this->locationKey => $location,
-                // A CSV column name comes from the file: make it valid UTF-8 and short, like the excerpt.
-                'field' => null === $field ? null : self::shorten($field),
-                'code' => $code,
-                'message' => $message,
-                'excerpt' => self::shorten($excerpt),
-            ];
-        }
+        $this->errors[] = [
+            $this->locationKey => $location,
+            // A CSV column name comes from the file: make it valid UTF-8 and short, like the excerpt.
+            'field' => null === $field ? null : self::shorten($field),
+            'code' => $code,
+            'message' => $message,
+            'excerpt' => self::shorten($excerpt),
+        ];
     }
 
     public function count(): int
@@ -72,12 +75,16 @@ final class ImportErrors
 
     public function toResponse(): JsonResponse
     {
+        // In file order (errors about the whole file first); usort is stable, so one line keeps its errors' order.
+        $errors = $this->errors;
+        usort($errors, fn (array $a, array $b): int => ($a[$this->locationKey] ?? 0) <=> ($b[$this->locationKey] ?? 0));
+
         return new ApiProblem(422, 'import_rejected', 'Import rejected: nothing was saved', [
             'errorCount' => $this->count,
             'affectedLines' => \count($this->affected),
             'errorCountsByCode' => $this->countsByCode,
             'truncated' => $this->count > self::MAX_LISTED,
-            'errors' => $this->listed,
+            'errors' => \array_slice($errors, 0, self::MAX_LISTED),
         ])->toResponse();
     }
 }

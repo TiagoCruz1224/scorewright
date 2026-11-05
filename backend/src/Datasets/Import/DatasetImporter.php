@@ -6,23 +6,28 @@ namespace App\Datasets\Import;
 
 use App\Datasets\Entity\Dataset;
 use App\Datasets\Entity\DatasetVersion;
+use App\Datasets\Entity\Run;
+use App\Datasets\Repository\AnswerRepository;
 use App\Datasets\Repository\TestCaseRepository;
 use App\Http\ApiProblem;
+use App\Projects\Entity\Project;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * The upload side of an import (ADR 0004): the checks before parsing, the parse, and the insert. The file is read in
- * memory and never stored; the version keeps only its SHA-256 and its cleaned-up original name.
+ * The upload side of the dataset and run imports (ADR 0004): the checks before parsing, the parse, and the insert.
+ * The file is read in memory and never stored; the version or run keeps only its SHA-256 and its cleaned-up name.
  */
 final class DatasetImporter
 {
     public function __construct(
-        private readonly CaseFileReader $reader,
+        private readonly CaseFileReader $caseReader,
+        private readonly RunFileReader $runReader,
         private readonly EntityManagerInterface $entityManager,
         private readonly TestCaseRepository $cases,
+        private readonly AnswerRepository $answers,
         #[Autowire(param: 'dataset_import.max_file_bytes')]
         private readonly int $maxFileBytes,
     ) {
@@ -36,7 +41,7 @@ final class DatasetImporter
         }
         $file = $request->files->get('file');
         if (!$file instanceof UploadedFile) {
-            throw ApiProblem::validation([['field' => 'file', 'code' => 'required', 'message' => 'Attach the dataset file (.csv or .json) in the "file" field.']]);
+            throw ApiProblem::validation([['field' => 'file', 'code' => 'required', 'message' => 'Attach the file (.csv or .json) in the "file" field.']]);
         }
         if (\in_array($file->getError(), [\UPLOAD_ERR_INI_SIZE, \UPLOAD_ERR_FORM_SIZE], true)) {
             throw $this->tooLarge();
@@ -54,17 +59,21 @@ final class DatasetImporter
     /**
      * @return list<ImportedCase>|ImportErrors
      */
-    public function read(UploadedFile $file): array|ImportErrors
+    public function readCases(UploadedFile $file): array|ImportErrors
     {
-        $format = strtolower(pathinfo($file->getClientOriginalName(), \PATHINFO_EXTENSION));
-        if ('csv' !== $format && 'json' !== $format) {
-            $errors = new ImportErrors('line');
-            $errors->add(null, null, 'unsupported_file_type', 'Upload a .csv or a .json file, in the import format.');
+        $format = self::formatOf($file);
 
-            return $errors;
-        }
+        return $format instanceof ImportErrors ? $format : $this->caseReader->read($file->getContent(), $format);
+    }
 
-        return $this->reader->read($file->getContent(), $format);
+    /**
+     * @return list<ImportedAnswer>|ImportErrors
+     */
+    public function readAnswers(UploadedFile $file, DatasetVersion $version): array|ImportErrors
+    {
+        $format = self::formatOf($file);
+
+        return $format instanceof ImportErrors ? $format : $this->runReader->read($file->getContent(), $format, $this->cases->idsByKey($version));
     }
 
     /**
@@ -74,7 +83,7 @@ final class DatasetImporter
      */
     public function saveVersion(Dataset $dataset, int $number, UploadedFile $file, array $cases): DatasetVersion
     {
-        $version = new DatasetVersion($dataset, $number, \count($cases), self::sourceFilename($file->getClientOriginalName()), (string) hash_file('sha256', $file->getPathname()));
+        $version = new DatasetVersion($dataset, $number, \count($cases), self::sourceFilename($file), self::sha256($file));
         $this->entityManager->persist($version);
         $this->entityManager->flush();
         $this->cases->insertBatch($version, $cases);
@@ -82,12 +91,47 @@ final class DatasetImporter
         return $version;
     }
 
-    /** The name only: no path, valid UTF-8, no control characters, at most 255 characters. */
-    private static function sourceFilename(string $clientName): string
+    /**
+     * Inserts the run and its answers. Call it inside the import transaction.
+     *
+     * @param list<ImportedAnswer> $answers
+     */
+    public function saveRun(Project $project, DatasetVersion $version, string $label, string $modelDescription, UploadedFile $file, array $answers): Run
     {
-        $name = (string) preg_replace(['~^.*[/\\\\]~s', '/\p{Cc}/u'], '', mb_scrub($clientName, 'UTF-8'));
+        $run = new Run($project, $version, $label, $modelDescription, \count($answers), self::sourceFilename($file), self::sha256($file));
+        $this->entityManager->persist($run);
+        $this->entityManager->flush();
+        $this->answers->insertBatch($run, $answers);
+
+        return $run;
+    }
+
+    /**
+     * @return 'csv'|'json'|ImportErrors
+     */
+    private static function formatOf(UploadedFile $file): string|ImportErrors
+    {
+        $format = strtolower(pathinfo($file->getClientOriginalName(), \PATHINFO_EXTENSION));
+        if ('csv' === $format || 'json' === $format) {
+            return $format;
+        }
+        $errors = new ImportErrors('line');
+        $errors->add(null, null, 'unsupported_file_type', 'Upload a .csv or a .json file, in the import format.');
+
+        return $errors;
+    }
+
+    /** The name only: no path, valid UTF-8, no control characters, at most 255 characters. */
+    private static function sourceFilename(UploadedFile $file): string
+    {
+        $name = (string) preg_replace(['~^.*[/\\\\]~s', '/\p{Cc}/u'], '', mb_scrub($file->getClientOriginalName(), 'UTF-8'));
 
         return mb_substr('' !== trim($name) ? trim($name) : 'upload', 0, 255);
+    }
+
+    private static function sha256(UploadedFile $file): string
+    {
+        return (string) hash_file('sha256', $file->getPathname());
     }
 
     private function tooLarge(): ApiProblem

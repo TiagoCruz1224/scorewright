@@ -24,7 +24,7 @@ const csvProblem = {
 
 describe('ImportRejected', () => {
   it('says what happened, counts the errors by type in words, and takes the focus', async () => {
-    renderRejected({ problem: csvProblem, fileName: 'support-cases.csv', unchangedVersion: 3 });
+    renderRejected({ problem: csvProblem, fileName: 'support-cases.csv', unchanged: 'Version v3 is unchanged.' });
 
     const heading = await screen.findByRole('heading', { name: 'Import rejected: nothing was saved' });
     expect(document.activeElement).toBe(heading);
@@ -39,7 +39,7 @@ describe('ImportRejected', () => {
   });
 
   it('lists the errors by line, with excerpts, and how many more were left out', async () => {
-    renderRejected({ problem: csvProblem, fileName: 'support-cases.csv' });
+    renderRejected({ problem: csvProblem, fileName: 'support-cases.csv', unchanged: 'No dataset was created.' });
 
     const table = await screen.findByRole('region', { name: 'Errors by line' });
     expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Line', 'Field', 'Problem']);

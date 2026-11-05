@@ -14,6 +14,7 @@ use App\Datasets\Repository\DatasetRepository;
 use App\Datasets\Repository\DatasetVersionRepository;
 use App\Datasets\Repository\TestCaseRepository;
 use App\Http\ApiProblem;
+use App\Http\FormFields;
 use App\Http\PageQuery;
 use App\Projects\ProjectAccess;
 use App\Projects\Security\ProjectVoter;
@@ -24,12 +25,10 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\MapQueryString;
-use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Uid\Uuid;
-use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
@@ -79,7 +78,7 @@ final class DatasetController
         if ($this->datasets->nameIsTaken($projectAccess->project->getId(), $name)) {
             throw self::nameTaken();
         }
-        $cases = $this->importer->read($file);
+        $cases = $this->importer->readCases($file);
         if ($cases instanceof ImportErrors) {
             return $cases->toResponse();
         }
@@ -128,8 +127,8 @@ final class DatasetController
     {
         $dataset = $this->findDataset($projectAccess, $datasetId);
         $file = $this->importer->uploadedFile($request);
-        self::rejectUnknownFields($request, []);
-        $cases = $this->importer->read($file);
+        FormFields::rejectUnknown($request, []);
+        $cases = $this->importer->readCases($file);
         if ($cases instanceof ImportErrors) {
             return $cases->toResponse();
         }
@@ -142,6 +141,23 @@ final class DatasetController
         });
 
         return new JsonResponse(self::versionJson($version), Response::HTTP_CREATED);
+    }
+
+    /** Every version in the project, with its dataset: to choose one, as when importing a run. */
+    #[Route('/api/projects/{projectId}/dataset-versions', name: 'dataset_version_list', methods: ['GET'], requirements: self::PROJECT)]
+    #[IsGranted(ProjectVoter::READ, 'projectAccess')]
+    public function versions(ProjectAccess $projectAccess, #[MapQueryString] PageQuery $query = new PageQuery()): JsonResponse
+    {
+        $page = $this->versions->findPageInProject($projectAccess->project->getId(), $query->page, $query->perPage);
+
+        return new JsonResponse([
+            'items' => array_map(static fn (DatasetVersion $version): array => self::versionJson($version) + [
+                'dataset' => ['id' => $version->getDataset()->getId()->toRfc4122(), 'name' => $version->getDataset()->getName()],
+            ], $page['items']),
+            'page' => $query->page,
+            'perPage' => $query->perPage,
+            'total' => $page['total'],
+        ]);
     }
 
     #[Route('/api/projects/{projectId}/dataset-versions/{versionId}/cases', name: 'dataset_cases', methods: ['GET'], requirements: ['projectId' => Requirement::UUID, 'versionId' => Requirement::UUID])]
@@ -162,26 +178,9 @@ final class DatasetController
     /** The "name" form field, validated like a JSON body: unknown fields rejected, constraints of the DTO. */
     private function datasetName(Request $request): string
     {
-        self::rejectUnknownFields($request, ['name']);
-        $name = $request->request->all()['name'] ?? '';
-        $body = new CreateDatasetRequest(\is_string($name) ? $name : '');
-        $violations = $this->validator->validate($body);
-        if (\count($violations) > 0) {
-            throw new UnprocessableEntityHttpException('', new ValidationFailedException($body, $violations));
-        }
+        FormFields::rejectUnknown($request, ['name']);
 
-        return trim($body->name);
-    }
-
-    /**
-     * @param list<string> $allowed
-     */
-    private static function rejectUnknownFields(Request $request, array $allowed): void
-    {
-        $unknown = array_diff(array_keys($request->request->all()), $allowed);
-        if ([] !== $unknown) {
-            throw ApiProblem::validation(array_map(static fn (int|string $field): array => ['field' => (string) $field, 'code' => 'unknown_field', 'message' => 'This field is not allowed.'], array_values($unknown)));
-        }
+        return trim(FormFields::validated($this->validator, new CreateDatasetRequest(FormFields::string($request, 'name')))->name);
     }
 
     private static function nameTaken(): ApiProblem

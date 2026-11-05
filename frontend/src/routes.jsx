@@ -15,6 +15,7 @@ import {
 } from './routes/datasets.jsx';
 import { ImportFormat } from './routes/importFormat.jsx';
 import { Members, membersAction, membersLoader } from './routes/members.jsx';
+import { ImportRun, importRunAction, importRunLoader, Run, runAction, runLoader, Runs, runsLoader } from './routes/runs.jsx';
 import { NewProject, newProjectAction, Overview, overviewLoader, ProjectLayout, projectLoader, Projects, projectsLoader } from './routes/projects.jsx';
 import { Settings, settingsAction } from './routes/settings.jsx';
 
@@ -52,6 +53,9 @@ export const routes = [
               { path: 'datasets/new', action: newDatasetAction, Component: NewDataset },
               { path: 'datasets/:datasetId', loader: datasetLoader, action: datasetAction, Component: Dataset },
               { path: 'datasets/:datasetId/import', loader: importVersionLoader, action: importVersionAction, Component: ImportVersion },
+              { path: 'runs', loader: runsLoader, Component: Runs },
+              { path: 'runs/new', loader: importRunLoader, action: importRunAction, Component: ImportRun },
+              { path: 'runs/:runId', loader: runLoader, action: runAction, Component: Run },
               { path: 'members', loader: membersLoader, action: membersAction, Component: Members },
               { path: 'settings', action: settingsAction, Component: Settings },
             ],

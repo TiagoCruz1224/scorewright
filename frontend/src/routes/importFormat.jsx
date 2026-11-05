@@ -13,7 +13,17 @@ const JSON_EXAMPLE = `[
   { "id": "refund-1", "input": "I want a refund.\\nMy order is late.", "tags": ["billing"] }
 ]`;
 
-/** The dataset file format (docs/api.md "Import format"), for the people who prepare the files. */
+const RUN_CSV_EXAMPLE = `id,output
+greeting,Hello! How can I help?
+refund-1,"Sorry about the delay.
+Your refund is on its way."`;
+
+const RUN_JSON_EXAMPLE = `[
+  { "id": "greeting", "output": "Hello! How can I help?" },
+  { "id": "refund-1", "output": "" }
+]`;
+
+/** The dataset and run file formats (docs/api.md "Import format", "Run files"), for the people who prepare them. */
 export function ImportFormat() {
   usePageTitle('CSV and JSON format');
 
@@ -109,6 +119,31 @@ export function ImportFormat() {
       </p>
       <pre className="example" tabIndex={0} aria-label="JSON example">
         {JSON_EXAMPLE}
+      </pre>
+
+      <h2 className="mt-10" id="run-files">
+        Run files
+      </h2>
+      <p>
+        A run file holds one model’s answers to the cases of a dataset version: one row per answer, with the same rules as a dataset file (UTF-8, .csv or .json,
+        at most {MAX_FILE_SIZE} and {n(LIMITS.maxCases)} answers, checked as a whole).
+      </p>
+      <ul className="mb-3 list-disc pl-6">
+        <li>
+          <code>id</code> (required): the id of the case this answers, as in the dataset version. An id the version does not have, or a second answer to the same
+          case, is an error.
+        </li>
+        <li>
+          <code>output</code> (required): the answer, up to {n(LIMITS.outputLength)} characters; line breaks and tabs are fine. It may be empty: a model that said
+          nothing still gave an answer to score.
+        </li>
+        <li>A run need not answer every case. Its page shows the coverage, such as “198 of 200 answered”, and unanswered cases are not scored.</li>
+      </ul>
+      <pre className="example" tabIndex={0} aria-label="Run CSV example">
+        {RUN_CSV_EXAMPLE}
+      </pre>
+      <pre className="example" tabIndex={0} aria-label="Run JSON example">
+        {RUN_JSON_EXAMPLE}
       </pre>
     </div>
   );

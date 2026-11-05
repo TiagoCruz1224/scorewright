@@ -17,8 +17,9 @@ use Symfony\Component\Security\Http\AccessMapInterface;
  * matrix checks who gets through, the feature tests check what happens next.
  *
  * Each case runs against a fresh active project with an owner, an evaluator and a viewer, plus a signed-in user who
- * is not a member, and a dataset with one version. {projectId} is that project and {userId} its viewer;
- * {nonMemberEmail} is the non-member's email; {datasetId} and {versionId} are the dataset and its version.
+ * is not a member, a dataset with one version, and a run of that version. {projectId} is that project and {userId}
+ * its viewer; {nonMemberEmail} is the non-member's email; {datasetId}, {versionId} and {runId} are the dataset, its
+ * version and the run.
  */
 final class AuthorizationMatrixTest extends ApiTestCase
 {
@@ -50,6 +51,11 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'dataset_delete' => ['DELETE', '/api/projects/{projectId}/datasets/{datasetId}', null, [401, 404, 403, 403, 204]],
         'dataset_version_create' => ['POST', '/api/projects/{projectId}/datasets/{datasetId}/versions', ['@file' => 'valid.json'], [401, 404, 403, 403, 201]],
         'dataset_cases' => ['GET', '/api/projects/{projectId}/dataset-versions/{versionId}/cases', null, [401, 404, 200, 200, 200]],
+        'dataset_version_list' => ['GET', '/api/projects/{projectId}/dataset-versions', null, [401, 404, 200, 200, 200]],
+        'run_list' => ['GET', '/api/projects/{projectId}/runs', null, [401, 404, 200, 200, 200]],
+        'run_create' => ['POST', '/api/projects/{projectId}/runs', ['datasetVersion' => '{versionId}', 'label' => 'New run', '@file' => 'run-for-a-b.csv'], [401, 404, 403, 403, 201]],
+        'run_show' => ['GET', '/api/projects/{projectId}/runs/{runId}', null, [401, 404, 200, 200, 200]],
+        'run_delete' => ['DELETE', '/api/projects/{projectId}/runs/{runId}', null, [401, 404, 403, 403, 204]],
     ];
 
     /** Every route, not only those under /api: a route added elsewhere must be in the matrix too. */
@@ -130,6 +136,7 @@ final class AuthorizationMatrixTest extends ApiTestCase
         $client = self::createApiClient();
         $fixture = self::createProjectWithMembers();
         $version = self::createDataset($fixture['project']);
+        $run = self::createRun($version);
         if ('anonymous' !== $actor) {
             $user = $fixture[$actor];
             self::assertInstanceOf(User::class, $user);
@@ -142,6 +149,7 @@ final class AuthorizationMatrixTest extends ApiTestCase
             '{nonMemberEmail}' => $fixture['non-member']->getEmail(),
             '{datasetId}' => $version->getDataset()->getId()->toRfc4122(),
             '{versionId}' => $version->getId()->toRfc4122(),
+            '{runId}' => $run->getId()->toRfc4122(),
         ];
         $uri = strtr($path, $placeholders);
         $body = null === $body ? null : array_map(static fn (string $value): string => strtr($value, $placeholders), $body);

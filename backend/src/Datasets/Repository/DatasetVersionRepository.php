@@ -7,6 +7,7 @@ namespace App\Datasets\Repository;
 use App\Datasets\Entity\Dataset;
 use App\Datasets\Entity\DatasetVersion;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\Tools\Pagination\Paginator;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
@@ -35,6 +36,28 @@ final class DatasetVersionRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
 
         return $version instanceof DatasetVersion ? $version : null;
+    }
+
+    /**
+     * Every version in the project, by dataset name and then newest first (to choose one, as when importing a run).
+     *
+     * @return array{items: list<DatasetVersion>, total: int}
+     */
+    public function findPageInProject(Uuid $projectId, int $page, int $perPage): array
+    {
+        $query = $this->createQueryBuilder('v')
+            ->addSelect('d')
+            ->join('v.dataset', 'd')
+            ->where('d.project = :project')
+            ->setParameter('project', $projectId, UuidType::NAME)
+            ->orderBy('d.name')
+            ->addOrderBy('d.id')
+            ->addOrderBy('v.number', 'DESC')
+            ->setFirstResult(($page - 1) * $perPage)
+            ->setMaxResults($perPage);
+        $paginator = new Paginator($query, fetchJoinCollection: false);
+
+        return ['items' => array_values(iterator_to_array($paginator)), 'total' => \count($paginator)];
     }
 
     /**

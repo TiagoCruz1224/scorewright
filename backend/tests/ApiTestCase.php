@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Tests;
 
+use App\Datasets\Entity\Answer;
 use App\Datasets\Entity\Dataset;
 use App\Datasets\Entity\DatasetVersion;
+use App\Datasets\Entity\Run;
 use App\Datasets\Entity\TestCase;
 use App\Projects\Entity\Project;
 use App\Projects\Entity\ProjectMember;
@@ -118,6 +120,22 @@ abstract class ApiTestCase extends WebTestCase
         $entityManager->flush();
 
         return $version;
+    }
+
+    /** A run of the version from createDataset(), answering case "a" only, created directly in the database. */
+    protected static function createRun(DatasetVersion $version, string $label = 'Baseline', string $output = 'Answer to a'): Run
+    {
+        $entityManager = self::getContainer()->get('doctrine.orm.entity_manager');
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+        $case = $entityManager->getRepository(TestCase::class)->findOneBy(['datasetVersion' => $version, 'caseKey' => 'a']);
+        self::assertInstanceOf(TestCase::class, $case);
+
+        $run = new Run($version->getDataset()->getProject(), $version, $label, 'A model', 1, 'run.csv', str_repeat('0', 64));
+        $entityManager->persist($run);
+        $entityManager->persist(new Answer($run, $case, $output));
+        $entityManager->flush();
+
+        return $run;
     }
 
     protected static function fixturePath(string $name): string

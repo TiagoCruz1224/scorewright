@@ -51,7 +51,7 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 | 409 | `project_archived` (any write to an archived project except restore), `last_owner` |
 | 413 | `payload_too_large` (body over 6 MiB, or an import file over 5 MiB) |
 | 415 | `unsupported_media_type` (a body that is not `application/json`, or none where one is needed; for uploads, not `multipart/form-data`) |
-| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken` or `required` (a missing upload) |
+| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken`, `label_taken`, `not_found` (a dataset version that is not the project's) or `required` (a missing upload) |
 | 422 | `import_rejected`: the dataset file has errors and nothing was saved (see [Import errors](#import-errors)) |
 | 429 | `too_many_login_attempts`, `too_many_registrations`, `too_many_invites`, `too_many_projects`; with `Retry-After` |
 | 500 | `internal_error` (details are only in the server log) |
@@ -164,8 +164,9 @@ SHA-256.
 | `GET P/datasets` | member | `200`, a list ordered by name; each dataset has its `latestVersion`. |
 | `POST P/datasets` | owner | Multipart: `name` (1 to 200 characters on one line, unique in the project: `422 name_taken` otherwise) and `file`. `201` with the dataset and `"versions": [version 1]`. |
 | `GET P/datasets/{datasetId}` | member | `200` with the dataset and all its `versions`, newest first. |
-| `DELETE P/datasets/{datasetId}` | owner | `204`; its versions and cases go too. |
+| `DELETE P/datasets/{datasetId}` | owner | `204`; its versions, cases and runs go too. |
 | `POST P/datasets/{datasetId}/versions` | owner | Multipart: `file`. `201` with the new version, numbered after the latest. |
+| `GET P/dataset-versions` | member | `200`, a list of every version in the project, each with its `dataset` (`id`, `name`), ordered by dataset name and then newest first: to choose a version, as when importing a run. |
 | `GET P/dataset-versions/{versionId}/cases` | member | `200`, a list of the version's cases in file order. `?tag=` keeps the cases with exactly that tag; `?q=` keeps those whose input, reference or case key contains the text, ignoring case. |
 
 A case:
@@ -259,9 +260,10 @@ My order is late.",,billing,
 | `unknown_field` | (JSON) a field outside the format |
 | `invalid_type` | (JSON) a case that is not an object, or a field of the wrong type |
 | `too_many_rows` | more than 5,000 cases (reported on the first case over the limit) |
-| `required` | an empty input, or no id when other cases have one |
-| `too_long` | an id over 100 characters, or an input or reference over 20,000; in CSV also a quoted value too large to read at all (`field` is then `null`) |
-| `duplicate_case_key` | an id that an earlier case already uses |
+| `required` | an empty input, or no id when other cases have one; in a run, an answer without `id` or `output` |
+| `unknown_case_key` | (run) an id that is not a case of the dataset version |
+| `too_long` | an id over 100 characters, an input or reference over 20,000, or a run output over 50,000; in CSV also a quoted value too large to read at all (`field` is then `null`) |
+| `duplicate_case_key` | an id that an earlier case already uses; in a run, a second answer to the same case |
 | `too_many_tags` | more than 20 tags |
 | `tag_too_long` | a tag over 50 characters |
 | `invalid_metadata` | metadata that is not a JSON object (in CSV, also invalid JSON or nested deeper than 30 levels) |
@@ -269,3 +271,63 @@ My order is late.",,billing,
 | `control_character` | a control character in a value (tab and line breaks are fine in input and reference), or NUL in metadata |
 
 A file over 5 MiB answers `413 payload_too_large` before it is read.
+
+## Runs
+
+A run is the answers of one model or system configuration to the cases of one dataset version, imported from a file.
+Members read runs; owners import and delete them. A run may leave cases unanswered: it shows its coverage,
+`answerCount` of `datasetVersion.caseCount` ("198 of 200 answered"), and unanswered cases are not scored.
+
+A run:
+
+```json
+{
+  "id": "01a1ab5e-…",
+  "label": "baseline-v1",
+  "modelDescription": "Model X, temperature 0",
+  "datasetVersion": { "id": "01a1ab4c-…", "number": 2, "caseCount": 200, "dataset": { "id": "01a1ab4c-…", "name": "Support cases" } },
+  "answerCount": 198,
+  "sourceFilename": "baseline-v1.csv",
+  "sha256": "9f2c…",
+  "createdAt": "2026-11-05T11:20:00+00:00"
+}
+```
+
+**No endpoint returns a run's answers** (architecture §5, "Run data and blind mode"): the run endpoints give metadata
+only. Answers will appear only in scoring and in results, where blind mode applies.
+
+| Endpoint | Who | Answer |
+|---|---|---|
+| `GET P/runs` | member | `200`, a list of runs, newest first. `?datasetVersion=` keeps the runs of one version. |
+| `POST P/runs` | owner | Multipart: `datasetVersion` (a version id of this project), `label` (1 to 100 characters on one line, unique in that version: `422 label_taken` otherwise), `modelDescription` (optional, up to 2,000 characters, line breaks allowed) and `file`. `201` with the run. A `datasetVersion` that is not one of the project's (another project's, unknown or malformed) answers `422` with `{"field": "datasetVersion", "code": "not_found"}`, the same for all. |
+| `GET P/runs/{runId}` | member | `200` with the run. |
+| `DELETE P/runs/{runId}` | owner | `204`; its answers go too. |
+
+### Run files
+
+The same rules as dataset files: UTF-8, `.csv` or `.json`, at most 5 MiB and 5,000 answers, checked as a whole
+(`422 import_rejected` with the same error format, and nothing saved).
+
+| Field | | Limit |
+|---|---|---|
+| `id` | required: the id of the case this answers, a case key of the chosen version | each case at most once |
+| `output` | required: the answer | 50,000 characters; line breaks and tabs are fine. **Empty is allowed**: a model that answered nothing gave an answer to score. |
+
+- CSV: the header names both columns, `id` and `output`, in any order. JSON: an array of `{"id": …, "output": …}`,
+  where `id` is a string or a whole number and `output` a string.
+- An `id` that is not a case of the version is `unknown_case_key`; a second answer to the same case is
+  `duplicate_case_key`. Cases the file does not answer are simply unanswered.
+
+```csv
+id,output
+greeting,Hello! How can I help?
+refund-1,"Sorry about the delay.
+Your refund is on its way."
+```
+
+```json
+[
+  { "id": "greeting", "output": "Hello! How can I help?" },
+  { "id": "refund-1", "output": "" }
+]
+```

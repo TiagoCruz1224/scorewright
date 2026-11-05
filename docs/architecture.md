@@ -164,6 +164,10 @@ erDiagram
         uuid dataset_version_id FK
         string label "unique per version"
         text model_description
+        int answer_count "coverage: of the version's case_count"
+        string source_filename
+        string sha256
+        timestamptz created_at
     }
     ANSWER {
         uuid id PK
@@ -239,7 +243,9 @@ erDiagram
 - **Case keys:** the dataset file has an optional `id` column (`id` field in JSON).
   - When present, it must be unique in the file.
   - When absent, `case_key` is the 1-based number of the data row (CSV, header not counted) or item (JSON).
-  - Runs refer to cases by `case_key`. In a run, an unknown or duplicated `case_key` is an import error.
+  - Runs refer to cases by `case_key`. In a run, an unknown or duplicated `case_key` is an import error
+    (`unknown_case_key`, `duplicate_case_key`). A run need not answer every case (§12, decision 2); an empty output
+    is an answer.
 - **Immutability:**
   - A dataset version and its cases and answers are never updated; there are no update endpoints.
   - A rubric with `locked_at` set rejects edits with `409 rubric_locked`, but can be duplicated. `locked_at` is set in
@@ -310,7 +316,7 @@ Prefix `P = /api/projects/{projectId}`. Roles: O = owner, E = evaluator, V = vie
 | Auth | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/me` | public / signed in |
 | Projects | `GET`, `POST /api/projects` (`?archived=true` lists archived ones); `GET`, `PATCH P`; `POST P/archive`; `POST P/restore` | any user creates (and becomes owner); read O E V; edit, archive and restore O |
 | Members | `GET`, `POST P/members` (`{email, role}`); `PATCH`, `DELETE P/members/{userId}` | O only |
-| Datasets | `GET P/datasets`; `POST P/datasets` (multipart: `name` + file, creates the dataset and version 1); `GET`, `DELETE P/datasets/{id}`; `POST P/datasets/{id}/versions` (next version); `GET P/dataset-versions/{id}/cases?tag=&q=` | read O E V; write O |
+| Datasets | `GET P/datasets`; `POST P/datasets` (multipart: `name` + file, creates the dataset and version 1); `GET`, `DELETE P/datasets/{id}`; `POST P/datasets/{id}/versions` (next version); `GET P/dataset-versions` (every version, to choose one); `GET P/dataset-versions/{id}/cases?tag=&q=` | read O E V; write O |
 | Runs | `GET P/runs?datasetVersion=`; `POST P/runs` (import); `GET`, `DELETE P/runs/{id}` | read O E V; write O |
 | Rubrics | `GET`, `POST P/rubrics`; `GET`, `PUT`, `DELETE P/rubrics/{id}`; `POST P/rubrics/{id}/duplicate` | read O E V; write O |
 | Evaluations | `GET`, `POST P/evaluations`; `GET`, `DELETE P/evaluations/{id}`; `POST …/close`; `POST …/automatic-checks` (re-run) | read O E V; write O |
@@ -378,10 +384,10 @@ Every error is `application/problem+json` (RFC 9457) with a stable machine-reada
 | 401 | Not signed in |
 | 403 | Member without the needed role, or an evaluator asking for the results of an open blind evaluation (`results_hidden_until_closed`) |
 | 404 | Resource missing **or in a project the user is not a member of**; any unknown path, including `/api` |
-| 409 | `rubric_locked`, `evaluation_closed`, `last_owner`, `in_use`, `project_archived`, duplicate run label, check job already active |
+| 409 | `rubric_locked`, `evaluation_closed`, `last_owner`, `in_use`, `project_archived`, check job already active |
 | 413 | Request body over 6 MiB, or an import file over its limit (5 MiB by default) |
 | 415 | Body that is not `application/json` (imports: not `multipart/form-data`) |
-| 422 | Validation or import errors, including unknown request fields |
+| 422 | Validation or import errors, including unknown request fields; a name or label already used (`name_taken`, `label_taken`) |
 | 429 | Login, registration, invites or project creation throttled; `Retry-After` gives the seconds to wait |
 
 Every error is Problem Details, whatever the path: the backend only serves the API, so no path shows Symfony's debug

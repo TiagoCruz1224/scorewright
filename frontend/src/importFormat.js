@@ -1,6 +1,6 @@
 /**
- * The dataset import format, in one place for every screen that mentions it: the limits (the API's, docs/api.md
- * "Import format") and readable names for the import error codes.
+ * The dataset and run import formats, in one place for every screen that mentions them: the limits (the API's,
+ * docs/api.md "Import format" and "Run files") and readable names for the import error codes.
  */
 export const LIMITS = {
   maxFileBytes: 5 * 1024 * 1024,
@@ -11,6 +11,7 @@ export const LIMITS = {
   tagLength: 50,
   metadataBytes: 10_240,
   metadataDepth: 30,
+  outputLength: 50_000,
 };
 
 export const MAX_FILE_SIZE = `${LIMITS.maxFileBytes / 1024 / 1024} MiB`;
@@ -31,6 +32,7 @@ export const IMPORT_ERROR_NAMES = {
   required: 'required value missing',
   too_long: 'text too long',
   duplicate_case_key: 'duplicate case id',
+  unknown_case_key: 'unknown case id',
   too_many_tags: 'too many tags',
   tag_too_long: 'tag too long',
   invalid_metadata: 'metadata not a JSON object',

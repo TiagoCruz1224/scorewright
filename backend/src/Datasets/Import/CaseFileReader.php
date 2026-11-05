@@ -8,8 +8,8 @@ use App\Http\NoControlCharactersValidator;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * Reads a whole dataset file in memory and checks every case (ADR 0004, architecture §4). The format is in
- * docs/api.md:
+ * Reads a whole dataset file in memory and checks every case (ADR 0004, architecture §4). ImportFile reads the
+ * structure; this class checks the values. The format is in docs/api.md:
  *
  * - CSV: a header row naming the columns: `input`, and optionally `id`, `reference`, `tags` (comma-separated in one
  *   cell) and `metadata` (a JSON object in one cell). Comma or semicolon delimited, with RFC 4180 quotes.
@@ -44,178 +44,41 @@ final class CaseFileReader
     public function read(string $content, string $format): array|ImportErrors
     {
         $errors = new ImportErrors('csv' === $format ? 'line' : 'item');
-        if (str_starts_with($content, "\u{FEFF}")) {
-            $content = substr($content, 3);
-        }
+        $rows = new ImportFile(self::FIELDS, ['input'], 'case', $this->maxCases)->rows($content, $format, $errors);
 
-        if ('' === trim($content)) {
-            $errors->add(null, null, 'empty_file', 'The file is empty. Add the cases, as described in the import format.');
-            $cases = [];
-        } else {
-            $cases = 'csv' === $format ? $this->readCsv($content, $errors) : $this->readJson($content, $errors);
+        // Ids are all or nothing: an id column (CSV), or one case with an id (JSON), means every case needs one.
+        $usesIds = [] !== array_filter($rows, static fn (array $row): bool => \array_key_exists('id', $row));
+        $cases = [];
+        $seenKeys = [];
+        foreach ($rows as $location => $row) {
+            $case = 'csv' === $format ? $this->csvCase($errors, $location, $row, $seenKeys) : $this->jsonCase($errors, $location, $row, $usesIds, $seenKeys);
+            if (null !== $case) {
+                $cases[] = $case;
+            }
         }
 
         return $errors->isEmpty() ? $cases : $errors;
     }
 
     /**
-     * @return list<ImportedCase>
-     */
-    private function readCsv(string $content, ImportErrors $errors): array
-    {
-        $delimiter = self::delimiter($content);
-        $columns = null;
-        $cases = [];
-        $seenKeys = [];
-        $count = 0;
-        foreach (self::csvRecords($content, $delimiter) as $line => $values) {
-            if (null === $values) {
-                $errors->add($line, null, 'invalid_csv', 'A quote is not closed, or a quoted value has more text after its closing quote. Put quotes around the whole value and double every quote inside it, like "say ""hi"" twice".');
-                break;
-            }
-            if (false === $values) {
-                $errors->add($line, null, 'too_long', \sprintf('A value on this line is far too long to read; the limit is %s characters. Shorten it.', number_format(self::MAX_TEXT_LENGTH)));
-                break;
-            }
-            if ([''] === $values) {
-                continue; // a blank line
-            }
-            if (null === $columns) {
-                $columns = self::readHeader($errors, $line, $values);
-                if (!$errors->isEmpty()) {
-                    return [];
-                }
-                continue;
-            }
-
-            if (++$count === $this->maxCases + 1) {
-                $errors->add($line, null, 'too_many_rows', \sprintf('The file has more than %s cases, the limit. Split it into several datasets.', number_format($this->maxCases)));
-            }
-            if (\count($values) !== \count($columns)) {
-                $errors->add($line, null, 'invalid_csv', \sprintf('This line has %d values, but the header has %d columns. Put quotes around any value that contains "%s" or a line break.', \count($values), \count($columns), $delimiter), implode($delimiter, $values));
-                continue;
-            }
-
-            $case = $this->csvCase($errors, $line, array_combine($columns, $values), $seenKeys);
-            if (null !== $case) {
-                $cases[] = $case;
-            }
-        }
-
-        if (0 === $count && $errors->isEmpty()) {
-            $errors->add(null, null, 'empty_file', 'The file has a header but no cases. Add one line per case below the header.');
-        }
-
-        return $cases;
-    }
-
-    /**
-     * @param list<string> $values
-     *
-     * @return list<string>
-     */
-    private static function readHeader(ImportErrors $errors, int $line, array $values): array
-    {
-        $columns = [];
-        foreach ($values as $value) {
-            $column = strtolower(trim($value));
-            if (!\in_array($column, self::FIELDS, true)) {
-                $errors->add($line, $value, 'unknown_column', 'This column is not part of the import format. Use only id, input, reference, tags and metadata; remove the column, or move its values into metadata.', $value);
-            } elseif (\in_array($column, $columns, true)) {
-                $errors->add($line, $column, 'duplicate_column', 'This column appears twice in the header. Keep one of them.');
-            }
-            $columns[] = $column;
-        }
-        if (!\in_array('input', $columns, true)) {
-            $errors->add($line, 'input', 'missing_column', 'The header has no "input" column. The first line must name the columns, for example: id,input,reference,tags,metadata.');
-        }
-
-        return $columns;
-    }
-
-    /**
-     * @param array<string, string> $row      column => value
-     * @param array<string, int>    $seenKeys
+     * @param array<string, mixed> $row      column => value (a string: this is CSV)
+     * @param array<string, int>   $seenKeys
      */
     private function csvCase(ImportErrors $errors, int $line, array $row, array &$seenKeys): ?ImportedCase
     {
-        $valid = true;
-        foreach ($row as $column => $value) {
-            if (!mb_check_encoding($value, 'UTF-8')) {
-                $errors->add($line, $column, 'invalid_utf8', 'This value is not valid UTF-8. Save the file with the UTF-8 encoding (in Excel: Save As, "CSV UTF-8").', $value);
-                $valid = false;
-            }
-        }
-        if (!$valid) {
-            return null;
-        }
-
-        $tags = array_values(array_filter(array_map(trim(...), explode(',', $row['tags'] ?? '')), static fn (string $tag): bool => '' !== $tag));
+        $cell = static fn (string $column): ?string => isset($row[$column]) ? (string) $row[$column] : null;
+        $tags = array_values(array_filter(array_map(trim(...), explode(',', $cell('tags') ?? '')), static fn (string $tag): bool => '' !== $tag));
         $metadata = '{}';
-        if ('' !== trim($row['metadata'] ?? '')) {
+        if ('' !== trim($cell('metadata') ?? '')) {
             try {
-                $decoded = json_decode($row['metadata'], false, self::jsonDepth(self::MAX_METADATA_DEPTH), \JSON_THROW_ON_ERROR);
+                $decoded = json_decode((string) $cell('metadata'), false, ImportFile::jsonDepth(self::MAX_METADATA_DEPTH), \JSON_THROW_ON_ERROR);
             } catch (\JsonException) {
                 $decoded = null;
             }
-            $metadata = self::encodeMetadata($errors, $line, $decoded, $row['metadata']);
+            $metadata = self::encodeMetadata($errors, $line, $decoded, (string) $cell('metadata'));
         }
 
-        return $this->toCase($errors, $line, (string) ($line - 1), $row['id'] ?? null, $row['input'], $row['reference'] ?? null, $tags, $metadata, $seenKeys);
-    }
-
-    /**
-     * @return list<ImportedCase>
-     */
-    private function readJson(string $content, ImportErrors $errors): array
-    {
-        if (!mb_check_encoding($content, 'UTF-8')) {
-            $errors->add(null, null, 'invalid_utf8', 'The file is not valid UTF-8. Save it with the UTF-8 encoding and try again.');
-
-            return [];
-        }
-        try {
-            // The array and a case object come before the metadata.
-            $items = json_decode($content, false, self::jsonDepth(2 + self::MAX_METADATA_DEPTH), \JSON_THROW_ON_ERROR);
-        } catch (\JsonException $exception) {
-            $errors->add(null, null, 'invalid_json', \JSON_ERROR_DEPTH === $exception->getCode()
-                ? \sprintf('The metadata is nested deeper than %d levels. Flatten it.', self::MAX_METADATA_DEPTH)
-                : 'The file is not valid JSON ('.$exception->getMessage().'). Check it with a JSON validator.');
-
-            return [];
-        }
-        if (!\is_array($items)) {
-            $errors->add(null, null, 'invalid_json', 'The file must be a JSON array of cases, like [{"input": "…"}, {"input": "…"}].');
-
-            return [];
-        }
-        if ([] === $items) {
-            $errors->add(null, null, 'empty_file', 'The array has no cases. Add at least one, like {"input": "…"}.');
-
-            return [];
-        }
-
-        // Ids are all or nothing: one case with an id means every case needs one.
-        $usesIds = [] !== array_filter($items, static fn (mixed $item): bool => $item instanceof \stdClass && property_exists($item, 'id'));
-        $cases = [];
-        $seenKeys = [];
-        foreach (array_values($items) as $index => $item) {
-            $number = $index + 1;
-            if ($number === $this->maxCases + 1) {
-                $errors->add($number, null, 'too_many_rows', \sprintf('The file has more than %s cases, the limit. Split it into several datasets.', number_format($this->maxCases)));
-            }
-            if (!$item instanceof \stdClass) {
-                $errors->add($number, null, 'invalid_type', 'Each case must be a JSON object, like {"input": "…"}.', (string) json_encode($item));
-                continue;
-            }
-
-            $case = $this->jsonCase($errors, $number, get_object_vars($item), $usesIds, $seenKeys);
-            if (null !== $case) {
-                $cases[] = $case;
-            }
-        }
-
-        return $cases;
+        return $this->toCase($errors, $line, (string) ($line - 1), $cell('id'), (string) $cell('input'), $cell('reference'), $tags, $metadata, $seenKeys);
     }
 
     /**
@@ -225,10 +88,6 @@ final class CaseFileReader
     private function jsonCase(ImportErrors $errors, int $item, array $fields, bool $usesIds, array &$seenKeys): ?ImportedCase
     {
         $before = $errors->count();
-        foreach (array_diff(array_keys($fields), self::FIELDS) as $unknown) {
-            $errors->add($item, (string) $unknown, 'unknown_field', 'This field is not part of the import format. Use only id, input, reference, tags and metadata; move anything else into metadata.');
-        }
-
         $id = $fields['id'] ?? ($usesIds ? '' : null);
         if (\is_int($id)) {
             $id = (string) $id;
@@ -347,59 +206,5 @@ final class CaseFileReader
         }
 
         return $json;
-    }
-
-    /**
-     * json_decode() counts the values inside the innermost object or array as one more level.
-     *
-     * @param int<1, max> $levels
-     *
-     * @return int<2, max>
-     */
-    private static function jsonDepth(int $levels): int
-    {
-        return $levels + 1;
-    }
-
-    /** Semicolons when the first line has more of them than commas (spreadsheets in many European locales). */
-    private static function delimiter(string $csv): string
-    {
-        $firstLine = substr($csv, 0, strcspn($csv, "\r\n"));
-
-        return substr_count($firstLine, ';') > substr_count($firstLine, ',') ? ';' : ',';
-    }
-
-    /**
-     * RFC 4180 records keyed by line, as a spreadsheet numbers them: the header is line 1, and a quoted value over
-     * several physical lines is still one line. Yields null at a quoting error, or false when PCRE gives up (a quoted
-     * value of megabytes with many escaped quotes exhausts pcre.backtrack_limit), and stops there.
-     *
-     * @return \Generator<int, list<string>|false|null>
-     */
-    private static function csvRecords(string $csv, string $delimiter): \Generator
-    {
-        // One field and what ends it: a quoted value ("" is a quote), or an unquoted one without quotes or line breaks.
-        $field = '/\G(?:"((?:[^"]++|"")*+)"|([^"'.$delimiter.'\r\n]*+))('.$delimiter.'|\r\n?|\n|\z)/';
-        $length = \strlen($csv);
-        $offset = 0;
-        $line = 1;
-        $record = [];
-        while (true) {
-            $matched = preg_match($field, $csv, $match, \PREG_UNMATCHED_AS_NULL, $offset);
-            if (1 !== $matched) {
-                yield $line => false === $matched ? false : null;
-
-                return;
-            }
-            $record[] = null !== $match[1] ? str_replace('""', '"', $match[1]) : (string) $match[2];
-            $offset += \strlen((string) $match[0]);
-            if ($delimiter !== $match[3]) {
-                yield $line++ => $record;
-                $record = [];
-                if ($offset >= $length) {
-                    return;
-                }
-            }
-        }
     }
 }

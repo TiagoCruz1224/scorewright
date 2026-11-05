@@ -1,4 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { Form } from 'react-router';
 import { ApiError } from '../api/client.js';
 
 /**
@@ -114,5 +116,43 @@ export function StatusMessage({ message }) {
     <p role="status" className={message ? 'font-semibold text-success' : 'sr-only'}>
       {message ?? ''}
     </p>
+  );
+}
+
+/**
+ * A delete that asks first, on the page and not in a browser dialog (like removing a member): the button opens the
+ * question with Delete (focused) and Cancel (back to the button). The form posts intent=delete to the page's action.
+ */
+export function ConfirmDelete({ heading, button, question, problem }) {
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <section className="max-w-xl">
+      <h2>{heading}</h2>
+      <ErrorSummary problem={problem} idPrefix="delete" />
+      {confirming ? (
+        <Form method="post" className="flex flex-wrap items-center gap-3">
+          <input type="hidden" name="intent" value="delete" />
+          <p className="mb-0">{question}</p>
+          <button type="submit" className="btn btn-danger" autoFocus>
+            Delete
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              flushSync(() => setConfirming(false));
+              document.getElementById('delete-start')?.focus();
+            }}
+          >
+            Cancel
+          </button>
+        </Form>
+      ) : (
+        <button id="delete-start" type="button" className="btn btn-danger" onClick={() => setConfirming(true)}>
+          {button}
+        </button>
+      )}
+    </section>
   );
 }

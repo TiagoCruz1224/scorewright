@@ -14,6 +14,7 @@ const renderPage = (path, fields) =>
     '/api/projects/p1': project(fields),
     '/api/projects/p1/members?page=1': members,
     '/api/projects/p1/datasets?perPage=1': { ...page([]), perPage: 1 },
+    '/api/projects/p1/runs?perPage=1': { ...page([]), perPage: 1 },
   });
 
 const projectNav = () => within(screen.getByRole('navigation', { name: 'Project' }));
@@ -51,10 +52,13 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
     expect(screen.queryByRole('button', { name: /Change role|Remove/ })).toBeNull();
   });
 
-  it('starts the owner’s next steps with importing a dataset', async () => {
+  it('starts the owner’s next steps with importing a dataset, then runs', async () => {
     await renderPage('/projects/p1', { role: 'owner' });
 
     const steps = within(screen.getByRole('heading', { name: 'Next steps' }).parentElement);
-    expect(steps.getByRole('link', { name: 'Import a dataset' }).getAttribute('href')).toBe('/projects/p1/datasets/new');
+    expect(steps.getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+      ['Import a dataset', '/projects/p1/datasets/new'],
+      ['Import runs', '/projects/p1/runs/new'],
+    ]);
   });
 });

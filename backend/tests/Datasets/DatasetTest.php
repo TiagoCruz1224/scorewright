@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace App\Tests\Datasets;
 
+use App\Datasets\Entity\Dataset;
 use App\Projects\Entity\Project;
 use App\Tests\ApiTestCase;
 use App\Users\Entity\User;
 use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Event\PrePersistEventArgs;
+use Doctrine\ORM\Events;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Component\HttpKernel\Log\DebugLoggerInterface;
+use Symfony\Component\Uid\Uuid;
 
 final class DatasetTest extends ApiTestCase
 {
@@ -139,6 +144,34 @@ final class DatasetTest extends ApiTestCase
         $other = self::createProjectWithMembers('Other project');
         $client->loginUser($other['owner']);
         self::assertSame(201, self::upload($client, '/api/projects/'.$other['project']->getId().'/datasets', self::fixturePath('valid.csv'), 'cases.csv', ['name' => 'Support'])->getStatusCode());
+    }
+
+    /** Two new datasets with one name at once: the database's unique index decides, and the loser gets name_taken. */
+    public function testAConcurrentImportWithTheSameNameGetsNameTaken(): void
+    {
+        [$client, $fixture, $path] = self::signedInOwner();
+        $client->disableReboot();
+        $entityManager = $client->getContainer()->get('doctrine.orm.entity_manager');
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+        // Just before this import saves its dataset, another one with the same name commits.
+        $entityManager->getEventManager()->addEventListener(Events::prePersist, new class {
+            public function prePersist(PrePersistEventArgs $args): void
+            {
+                $dataset = $args->getObject();
+                if ($dataset instanceof Dataset) {
+                    $args->getObjectManager()->getConnection()->insert('dataset', [
+                        'id' => Uuid::v7()->toRfc4122(), 'project_id' => $dataset->getProject()->getId()->toRfc4122(),
+                        'name' => $dataset->getName(), 'created_at' => '2026-11-05 10:00:00+00',
+                    ]);
+                }
+            }
+        });
+
+        $response = self::upload($client, "$path/datasets", self::fixturePath('valid.csv'), 'cases.csv', ['name' => 'Support']);
+
+        self::assertProblem($response, 422, 'validation_failed');
+        self::assertSame('name_taken', self::json($response)['errors'][0]['code']);
+        self::assertSame([0, 0, 0], self::storedRows($fixture['project']));
     }
 
     public function testImportsNeedAMultipartRequestWithACsvOrJsonFile(): void

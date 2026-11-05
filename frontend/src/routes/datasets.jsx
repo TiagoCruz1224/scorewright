@@ -1,8 +1,6 @@
-import { useState } from 'react';
-import { flushSync } from 'react-dom';
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useRouteLoaderData } from 'react-router';
 import { api } from '../api/client.js';
-import { attempt, ErrorSummary, Field, StatusMessage } from '../components/forms.jsx';
+import { attempt, ConfirmDelete, Field, StatusMessage } from '../components/forms.jsx';
 import { ImportFileField, ImportProgress, UploadProblem } from '../components/imports.jsx';
 import { Breadcrumb, Pager, usePageTitle } from '../components/layout.jsx';
 
@@ -126,7 +124,7 @@ export function NewDataset() {
       <h1>New dataset</h1>
       {canWrite(project) ? (
         <>
-          <UploadProblem problem={result?.problem} fileName={result?.fileName} />
+          <UploadProblem problem={result?.problem} fileName={result?.fileName} unchanged="No dataset was created." />
           <Form method="post" encType="multipart/form-data" noValidate className="max-w-xl">
             <Field name="name" label="Name" required autoComplete="off" hint="Up to 200 characters, unique in the project." problem={formProblem} />
             <ImportFileField problem={formProblem} />
@@ -250,7 +248,15 @@ export function Dataset() {
         <Pager list={list} />
       </section>
 
-      {canWrite(project) && <DeleteDataset key={result?.problem ? JSON.stringify(result.problem) : 'delete'} dataset={dataset} problem={result?.problem} />}
+      {canWrite(project) && (
+        <ConfirmDelete
+          key={result?.problem ? JSON.stringify(result.problem) : 'delete'}
+          heading="Delete the dataset"
+          button="Delete dataset"
+          question={`Delete “${dataset.name}” with ${dataset.versions.length === 1 ? 'its version, cases and runs' : `its ${dataset.versions.length} versions and all their cases and runs`}? This cannot be undone.`}
+          problem={result?.problem}
+        />
+      )}
     </>
   );
 }
@@ -297,43 +303,6 @@ export function CaseTable({ items }) {
   );
 }
 
-/** Delete, after a confirmation on the page (like removing a member). */
-function DeleteDataset({ dataset, problem }) {
-  const [confirming, setConfirming] = useState(false);
-  const versions = dataset.versions.length;
-
-  return (
-    <section className="max-w-xl">
-      <h2 id="delete-heading">Delete the dataset</h2>
-      <ErrorSummary problem={problem} idPrefix="delete" />
-      {confirming ? (
-        <Form method="post" className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="intent" value="delete" />
-          <p className="mb-0">
-            Delete “{dataset.name}” with {versions === 1 ? 'its version and cases' : `its ${versions} versions and all their cases`}? This cannot be undone.
-          </p>
-          <button type="submit" className="btn btn-danger" autoFocus>
-            Delete
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              flushSync(() => setConfirming(false));
-              document.getElementById('delete-dataset')?.focus();
-            }}
-          >
-            Cancel
-          </button>
-        </Form>
-      ) : (
-        <button id="delete-dataset" type="button" className="btn btn-danger" onClick={() => setConfirming(true)}>
-          Delete dataset
-        </button>
-      )}
-    </section>
-  );
-}
 
 export async function importVersionLoader({ params, request }) {
   return api(`/api/projects/${params.projectId}/datasets/${params.datasetId}`, { request });
@@ -369,7 +338,7 @@ export function ImportVersion() {
           <p>
             The file becomes version v{dataset.versions[0].number + 1} of “{dataset.name}”. Earlier versions do not change.
           </p>
-          <UploadProblem problem={result?.problem} fileName={result?.fileName} unchangedVersion={dataset.versions[0].number} />
+          <UploadProblem problem={result?.problem} fileName={result?.fileName} unchanged={`Version v${dataset.versions[0].number} is unchanged.`} />
           <Form method="post" encType="multipart/form-data" noValidate className="max-w-xl">
             <ImportFileField problem={formProblem} />
             <button type="submit" className="btn btn-primary" disabled={submitting}>
