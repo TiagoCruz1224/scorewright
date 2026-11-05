@@ -23,11 +23,17 @@ final class NoControlCharactersValidator extends ConstraintValidator
             throw new UnexpectedValueException($value, 'string');
         }
 
-        // preg_match() returns false for invalid UTF-8, which is rejected too.
-        if (0 !== preg_match($constraint->multiline ? '/[^\P{Cc}\t\n\r]/u' : '/\p{Cc}/u', $value)) {
+        if (!self::accepts($value, $constraint->multiline)) {
             $this->context->buildViolation($constraint->message)
                 ->setCode(NoControlCharacters::CONTROL_CHARACTER_ERROR)
                 ->addViolation();
         }
+    }
+
+    /** The rule itself, for code that checks many values without the Validator (the dataset import). */
+    public static function accepts(string $value, bool $multiline = false): bool
+    {
+        // preg_match() returns false for invalid UTF-8, which is rejected too.
+        return 0 === preg_match($multiline ? '/[^\P{Cc}\t\n\r]/u' : '/\p{Cc}/u', $value);
     }
 }

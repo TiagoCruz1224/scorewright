@@ -1,0 +1,4 @@
+input,metadata
+Array,"[1,2]"
+Not JSON,{oops
+Object,"{""ok"": true}"

@@ -1,2 +1,5 @@
 # LF everywhere, so shell scripts and config files work inside the Linux containers after a clone on Windows.
 * text=auto eol=lf
+
+# Import fixtures keep their exact bytes (CRLF, byte order marks, invalid UTF-8, control characters).
+backend/tests/Datasets/fixtures/** -text

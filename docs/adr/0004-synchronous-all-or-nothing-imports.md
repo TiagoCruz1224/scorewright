@@ -24,7 +24,10 @@ import on the same screen.
 ## Consequences
 
 - No partial data, no stored uploads, and no file-serving surface.
-- The upload request takes as long as the parse: within the limits this should be a few seconds at most, which slice 4
-  measures.
+- The upload request takes as long as the parse: within the limits this should be a few seconds at most.
+  Measured in slice 5 with 5,000 cases near the 5 MiB limit (CSV 4.9 MB, JSON 5.1 MB), inside the app container:
+  reading and validating takes about 45 ms, the batched insert in one transaction 130 to 170 ms, and the peak memory
+  is 61 MB. The whole request on the development stack took 0.7 to 1.6 s, mostly the development environment's
+  own overhead on a Windows bind mount (`/api/health` alone takes 0.3 to 0.5 s there).
 - If it is too slow, the same validator moves into a Messenger job behind an "import pending" state. The API contract
   (errors format) stays the same.

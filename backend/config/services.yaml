@@ -7,6 +7,10 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    # Dataset import limits (architecture §9). The request body limit (6 MiB: post_max_size in
+    # backend/frankenphp/app.ini and request_body in the Caddyfile) must stay above max_file_bytes.
+    dataset_import.max_file_bytes: 5242880 # 5 MiB
+    dataset_import.max_cases: 5000
 
 services:
     # default configuration for services in *this* file
@@ -26,3 +30,11 @@ services:
     Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler:
         arguments:
             - '%env(DATABASE_URL)%'
+
+when@test:
+    services:
+        # Every level, kept in memory, so tests can read the logs (DatasetTest checks that import excerpts never
+        # reach them) without printing them.
+        logger:
+            class: Symfony\Component\HttpKernel\Log\Logger
+            arguments: ['debug', 'php://memory', null, '@request_stack', true]

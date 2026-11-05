@@ -23,7 +23,10 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 - **Rate limits** answer `429` with a `Retry-After` header: the number of seconds to wait.
 - **Caching:** every response has `Cache-Control: no-store`.
 - **Projects:** every project resource lives under `/api/projects/{projectId}`. If you are not a member of that
-  project, or it does not exist, the answer is `404 not_found` (the same for both), before any other check.
+  project, or it does not exist, the answer is `404 not_found` (the same for both), before any other check. A
+  dataset or version of another project is also a `404`, the same as one that does not exist.
+- **Uploads** (dataset imports) are `multipart/form-data` with the file in a field named `file`; anything else answers
+  `415`.
 - **Errors** are `application/problem+json` ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)) with a stable `code`:
 
 ```json
@@ -46,9 +49,10 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 | 404 | `not_found` (also: a project you are not a member of, and any path that does not exist, `/api` included) |
 | 405 | `method_not_allowed` |
 | 409 | `project_archived` (any write to an archived project except restore), `last_owner` |
-| 413 | `payload_too_large` (body over 6 MiB) |
-| 415 | `unsupported_media_type` (a body that is not `application/json`, or none where one is needed) |
-| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `unknown_field`, `email_taken`, `no_account` or `already_member` |
+| 413 | `payload_too_large` (body over 6 MiB, or an import file over 5 MiB) |
+| 415 | `unsupported_media_type` (a body that is not `application/json`, or none where one is needed; for uploads, not `multipart/form-data`) |
+| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken` or `required` (a missing upload) |
+| 422 | `import_rejected`: the dataset file has errors and nothing was saved (see [Import errors](#import-errors)) |
 | 429 | `too_many_login_attempts`, `too_many_registrations`, `too_many_invites`, `too_many_projects`; with `Retry-After` |
 | 500 | `internal_error` (details are only in the server log) |
 | 503 | `database_unavailable` (health check) |
@@ -135,3 +139,133 @@ Owners only. A member:
 | `POST /api/projects/{projectId}/members` | `201` with the member. Body `{"email": "…", "role": "owner\|evaluator\|viewer"}`. Only users who already have an account can be added (`422` with `no_account` otherwise; `already_member` if they are in the project). At most 20 invites per hour per inviting user, across all their projects, failed ones included (`429 too_many_invites`): `no_account` tells whether an account exists. |
 | `PATCH /api/projects/{projectId}/members/{userId}` | `200` with the member. Body `{"role": "…"}`. `409 last_owner` if this would leave the project without an owner; `404` if the user is not a member. |
 | `DELETE /api/projects/{projectId}/members/{userId}` | `204`. An owner can remove themselves when another owner exists; `409 last_owner` otherwise. |
+
+## Datasets
+
+Members read datasets; owners import and delete them. An import is checked as a whole before anything is saved: a
+file with any error answers `422 import_rejected` and stores nothing. A version never changes; importing again adds
+the next version. `P` is `/api/projects/{projectId}`.
+
+A dataset, and a version:
+
+```json
+{ "id": "01a1ab22-2c59-72e1-8ec0-bd9c3387c210", "name": "Support cases", "createdAt": "2026-11-05T09:55:12+00:00" }
+```
+
+```json
+{ "id": "01a1ab22-443b-7982-8bf8-37503264e149", "number": 1, "caseCount": 5000, "sourceFilename": "cases.csv", "sha256": "1c972c35…", "createdAt": "2026-11-05T09:55:12+00:00" }
+```
+
+The file itself is not kept, only its name (without any path or control characters, at most 255 characters) and its
+SHA-256.
+
+| Endpoint | Who | Answer |
+|---|---|---|
+| `GET P/datasets` | member | `200`, a list ordered by name; each dataset has its `latestVersion`. |
+| `POST P/datasets` | owner | Multipart: `name` (1 to 200 characters on one line, unique in the project: `422 name_taken` otherwise) and `file`. `201` with the dataset and `"versions": [version 1]`. |
+| `GET P/datasets/{datasetId}` | member | `200` with the dataset and all its `versions`, newest first. |
+| `DELETE P/datasets/{datasetId}` | owner | `204`; its versions and cases go too. |
+| `POST P/datasets/{datasetId}/versions` | owner | Multipart: `file`. `201` with the new version, numbered after the latest. |
+| `GET P/dataset-versions/{versionId}/cases` | member | `200`, a list of the version's cases in file order. `?tag=` keeps the cases with exactly that tag; `?q=` keeps those whose input, reference or case key contains the text, ignoring case. |
+
+A case:
+
+```json
+{ "id": "01a1ab22-…", "caseKey": "refund-1", "input": "I want a refund.\nMy order is late.", "reference": null, "tags": ["billing"], "metadata": {} }
+```
+
+### Import format
+
+The file is UTF-8 (a byte order mark is ignored), named `.csv` or `.json`, with at most **5 MiB** and **5,000 cases**.
+Both limits are parameters in `backend/config/services.yaml` (`dataset_import.max_file_bytes`,
+`dataset_import.max_cases`); the request body limit (6 MiB) must stay above the file limit.
+
+| Field | | Limit |
+|---|---|---|
+| `id` | optional: the case key that runs refer to | 100 characters on one line, unique in the file |
+| `input` | required: the prompt | 20,000 characters; line breaks and tabs are fine |
+| `reference` | optional: the expected answer | 20,000 characters; line breaks and tabs are fine |
+| `tags` | optional | 20 per case, 50 characters each, one line; repeated tags are dropped |
+| `metadata` | optional JSON object | 10,240 bytes as JSON, 30 levels deep |
+
+No value may contain other control characters, such as NUL or escape (`control_character`).
+
+**Case keys.** If one case has an `id`, every case needs one, and no two may be equal. Without ids, a case's key is
+its line number minus one in CSV (the first case after the header is `1`) or its item number in JSON.
+
+**CSV.**
+- The first line names the columns, in any order and any case: `input`, and optionally `id`, `reference`, `tags` and
+  `metadata`. Other columns are rejected.
+- Values are separated by commas, or by semicolons when the header has more semicolons than commas (as spreadsheets
+  save CSV in many European locales).
+- Quotes follow RFC 4180: a value that contains the separator, a quote or a line break is in double quotes, with each
+  quote inside doubled.
+- `tags` are comma-separated in one cell; `metadata` is a JSON object in one cell, or empty. An empty `reference`
+  means none. Blank lines are skipped.
+
+```csv
+id,input,reference,tags,metadata
+greeting,Say hello,Hello!,"smalltalk, short","{""lang"": ""en""}"
+refund-1,"I want a refund.
+My order is late.",,billing,
+```
+
+**JSON.** An array of objects with the same fields. `id` is a string or a whole number, `tags` an array of strings.
+
+```json
+[
+  { "id": "greeting", "input": "Say hello", "reference": "Hello!", "tags": ["smalltalk", "short"], "metadata": { "lang": "en" } },
+  { "id": "refund-1", "input": "I want a refund.\nMy order is late.", "tags": ["billing"] }
+]
+```
+
+### Import errors
+
+```json
+{
+  "type": "/problems/import-rejected",
+  "title": "Import rejected: nothing was saved",
+  "status": 422,
+  "code": "import_rejected",
+  "errorCount": 2,
+  "affectedLines": 2,
+  "errorCountsByCode": { "required": 1, "duplicate_case_key": 1 },
+  "truncated": false,
+  "errors": [
+    { "line": 3, "field": "input", "code": "required", "message": "The input is empty. Every case needs the prompt text in \"input\".", "excerpt": "" },
+    { "line": 4, "field": "id", "code": "duplicate_case_key", "message": "Another case (line 2) already uses this id. Each id must be unique in the file.", "excerpt": "a" }
+  ]
+}
+```
+
+- `line` in CSV, as a spreadsheet numbers it: the header is line 1, and a quoted value over several lines is still one
+  line. `item` in JSON, from 1. It is `null` for an error about the whole file.
+- `field` is the column or field, or `null`.
+- `message` says how to fix the error; `excerpt` shows at most 80 characters of the value. Excerpts appear only in
+  this response, never in logs.
+- At most 100 errors are listed (`truncated` is then `true`); `errorCount`, `affectedLines` (lines or items with an
+  error) and `errorCountsByCode` cover the whole file.
+
+| `code` | When |
+|---|---|
+| `unsupported_file_type` | the name does not end in `.csv` or `.json` |
+| `empty_file` | no bytes, a header but no cases, or `[]` |
+| `invalid_utf8` | not UTF-8 (CSV: per value; JSON: the whole file) |
+| `invalid_csv` | a quote that is not closed, text after a closing quote, or a line with more or fewer values than the header |
+| `invalid_json` | not valid JSON, not an array, or metadata nested deeper than 30 levels |
+| `missing_column` | no `input` column |
+| `unknown_column` | a column outside the format |
+| `duplicate_column` | the same column twice |
+| `unknown_field` | (JSON) a field outside the format |
+| `invalid_type` | (JSON) a case that is not an object, or a field of the wrong type |
+| `too_many_rows` | more than 5,000 cases (reported on the first case over the limit) |
+| `required` | an empty input, or no id when other cases have one |
+| `too_long` | an id over 100 characters, or an input or reference over 20,000 |
+| `duplicate_case_key` | an id that an earlier case already uses |
+| `too_many_tags` | more than 20 tags |
+| `tag_too_long` | a tag over 50 characters |
+| `invalid_metadata` | metadata that is not a JSON object (in CSV, also invalid JSON or nested deeper than 30 levels) |
+| `metadata_too_large` | metadata over 10,240 bytes as JSON |
+| `control_character` | a control character in a value (tab and line breaks are fine in input and reference), or NUL in metadata |
+
+A file over 5 MiB answers `413 payload_too_large` before it is read.

@@ -1,0 +1,5 @@
+[
+  {"id": "greeting", "input": "Say hello", "reference": "Hello!", "tags": ["smalltalk", "short"], "metadata": {"lang": "en"}},
+  {"id": 42, "input": "Numeric ids become strings", "tags": [], "metadata": {}},
+  {"id": "nested", "input": "Line 1\nLine 2", "reference": null, "metadata": {"a": {"b": [1, 2.5, true, null]}}}
+]

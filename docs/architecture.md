@@ -123,6 +123,7 @@ erDiagram
         uuid id PK
         uuid project_id FK
         string name "unique per project"
+        timestamptz created_at
     }
     DATASET_VERSION {
         uuid id PK
@@ -131,15 +132,17 @@ erDiagram
         int case_count
         string source_filename
         string sha256
+        timestamptz created_at
     }
     TEST_CASE {
         uuid id PK
         uuid dataset_version_id FK
+        int position "order in the file"
         string case_key "file id, or row number; unique per version"
         text input
         text reference "nullable"
-        text_array tags "GIN index"
-        jsonb metadata
+        jsonb tags "array of strings; GIN index"
+        jsonb metadata "object"
     }
     RUN {
         uuid id PK
@@ -250,13 +253,15 @@ erDiagram
 | `input`, `reference` | 20,000 characters |
 | answer `output` | 50,000 characters |
 | `tags` | 20 per case, 50 characters each |
-| `metadata` | JSON object, 10 KB when encoded |
+| `metadata` | JSON object, 10 KB (10,240 bytes) when encoded, 30 levels deep |
 | model description | 2,000 characters |
 | names (project, dataset, rubric, criterion, evaluation) | 200 characters |
 | guidance, comment | 5,000 characters |
 
-Indexes beyond the unique constraints: `test_case (dataset_version_id)`, GIN on `test_case.tags`,
-`evaluation_item (evaluation_id, position)`, `score (criterion_id)`, `answer (test_case_id)`.
+Indexes beyond the unique constraints: `test_case (dataset_version_id, position)`, GIN (`jsonb_path_ops`, for the
+`@>` tag filter) on `test_case.tags`, `evaluation_item (evaluation_id, position)`, `score (criterion_id)`,
+`answer (test_case_id)`. Tags are a jsonb array rather than `text[]`: Doctrine maps jsonb natively, and the GIN
+index serves the exact-tag filter the same way.
 
 Sizes at the MVP limits: 5,000 cases × 5 runs = 25,000 answers, and with about 6 criteria 150,000 scores per
 evaluation. That is small for PostgreSQL with these indexes.
@@ -276,10 +281,11 @@ Conventions:
   - Text fields reject control characters with the reusable `App\Http\NoControlCharacters` constraint (code
     `control_character`); multi-line fields allow tab, line feed and carriage return. Imports use it too.
   - Tests cover all of this.
-- **Body size:** a request body is at most **6 MiB** (the 5 MB import file of §9 plus the multipart overhead). Caddy
-  (`request_body max_size`) and PHP (`post_max_size`, `upload_max_filesize`) share the limit, and a larger
+- **Body size:** a request body is at most **6 MiB** (the 5 MiB import file of §9 plus the multipart overhead).
+  Caddy (`request_body max_size`) and PHP (`post_max_size`, `upload_max_filesize`) share the limit, and a larger
   `Content-Length` answers `413 payload_too_large` before anything is parsed.
-- **Imports** are `multipart/form-data` with one file. Size is checked before parsing.
+- **Imports** are `multipart/form-data` with one file in the `file` field. Size is checked before parsing. The file
+  format, its limits and every import error code are in [api.md](api.md#import-format).
 - Responses carry `Cache-Control: no-store`.
 - Plain Symfony controllers, no API Platform ([ADR 0006](adr/0006-plain-controllers-and-problem-details.md)).
 
@@ -359,7 +365,7 @@ Every error is `application/problem+json` (RFC 9457) with a stable machine-reada
 | 403 | Member without the needed role, or an evaluator asking for the results of an open blind evaluation (`results_hidden_until_closed`) |
 | 404 | Resource missing **or in a project the user is not a member of**; any unknown path, including `/api` |
 | 409 | `rubric_locked`, `evaluation_closed`, `last_owner`, `in_use`, `project_archived`, duplicate run label, check job already active |
-| 413 | Request body over 6 MiB, or an import file over its limit (5 MB by default) |
+| 413 | Request body over 6 MiB, or an import file over its limit (5 MiB by default) |
 | 415 | Body that is not `application/json` (imports: not `multipart/form-data`) |
 | 422 | Validation or import errors, including unknown request fields |
 | 429 | Login, registration, invites or project creation throttled; `Retry-After` gives the seconds to wait |
@@ -471,8 +477,9 @@ OWASP ASVS level 1 is the reference. The concrete rules for this project:
 - **Input:**
   - DTO validation at the API boundary, unknown fields rejected, JSON bodies only.
   - Text fields reject control characters (§5); PostgreSQL would otherwise cut a text off at a NUL byte.
-  - The request body is capped at 6 MiB (§5, `413`). The import file limit is 5 MB, plus 5,000 rows by default
-    (configurable, checked by the app), and the field limits in §4. Raising the file limit above about 6 MB means
+  - The request body is capped at 6 MiB (§5, `413`). The import file limit is 5 MiB and 5,000 cases by default,
+    checked by the app (parameters `dataset_import.max_file_bytes` and `dataset_import.max_cases` in
+    `backend/config/services.yaml`), plus the field limits in §4. Raising the file limit above about 6 MB means
     raising `post_max_size`, `upload_max_filesize` (`backend/frankenphp/app.ini`) and `request_body max_size`
     (`backend/frankenphp/Caddyfile`) with it.
   - JSON parsing has a depth limit.

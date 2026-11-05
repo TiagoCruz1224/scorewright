@@ -17,13 +17,17 @@ use Symfony\Component\Security\Http\AccessMapInterface;
  * matrix checks who gets through, the feature tests check what happens next.
  *
  * Each case runs against a fresh active project with an owner, an evaluator and a viewer, plus a signed-in user who
- * is not a member. {projectId} is that project and {userId} its viewer; {nonMemberEmail} is the non-member's email.
+ * is not a member, and a dataset with one version. {projectId} is that project and {userId} its viewer;
+ * {nonMemberEmail} is the non-member's email; {datasetId} and {versionId} are the dataset and its version.
  */
 final class AuthorizationMatrixTest extends ApiTestCase
 {
     private const ACTORS = ['anonymous', 'non-member', 'viewer', 'evaluator', 'owner'];
 
-    /** route name => [method, path, JSON body or null, expected status for each of self::ACTORS, in that order] */
+    /**
+     * route name => [method, path, body, expected status for each of self::ACTORS, in that order]. The body is null,
+     * JSON fields, or multipart fields when it has '@file' => the name of a file in tests/Datasets/fixtures.
+     */
     private const MATRIX = [
         'health' => ['GET', '/api/health', null, [200, 200, 200, 200, 200]],
         'auth_register' => ['POST', '/api/auth/register', [], [422, 422, 422, 422, 422]],
@@ -40,6 +44,12 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'member_invite' => ['POST', '/api/projects/{projectId}/members', ['email' => '{nonMemberEmail}', 'role' => 'viewer'], [401, 404, 403, 403, 201]],
         'member_update' => ['PATCH', '/api/projects/{projectId}/members/{userId}', ['role' => 'evaluator'], [401, 404, 403, 403, 200]],
         'member_remove' => ['DELETE', '/api/projects/{projectId}/members/{userId}', null, [401, 404, 403, 403, 204]],
+        'dataset_list' => ['GET', '/api/projects/{projectId}/datasets', null, [401, 404, 200, 200, 200]],
+        'dataset_create' => ['POST', '/api/projects/{projectId}/datasets', ['name' => 'New dataset', '@file' => 'valid.csv'], [401, 404, 403, 403, 201]],
+        'dataset_show' => ['GET', '/api/projects/{projectId}/datasets/{datasetId}', null, [401, 404, 200, 200, 200]],
+        'dataset_delete' => ['DELETE', '/api/projects/{projectId}/datasets/{datasetId}', null, [401, 404, 403, 403, 204]],
+        'dataset_version_create' => ['POST', '/api/projects/{projectId}/datasets/{datasetId}/versions', ['@file' => 'valid.json'], [401, 404, 403, 403, 201]],
+        'dataset_cases' => ['GET', '/api/projects/{projectId}/dataset-versions/{versionId}/cases', null, [401, 404, 200, 200, 200]],
     ];
 
     /** Every route, not only those under /api: a route added elsewhere must be in the matrix too. */
@@ -90,11 +100,11 @@ final class AuthorizationMatrixTest extends ApiTestCase
         }
     }
 
-    /** A form post (or any body that is not JSON) is refused before anything reads it. */
+    /** A form post to a JSON route, or JSON to an upload route, is refused before anything reads it. */
     #[DataProvider('routesWithABody')]
-    public function testRoutesWithABodyOnlyAcceptJson(string $route): void
+    public function testRoutesRefuseABodyOfTheWrongType(string $route): void
     {
-        self::assertProblem(self::requestAs($route, 'owner', asForm: true), 415, 'unsupported_media_type');
+        self::assertProblem(self::requestAs($route, 'owner', wrongBodyType: true), 415, 'unsupported_media_type');
     }
 
     /** Deny by default, outside /api too: a route someone adds anywhere needs a signed-in user unless listed. */
@@ -111,11 +121,15 @@ final class AuthorizationMatrixTest extends ApiTestCase
         }
     }
 
-    private static function requestAs(string $route, string $actor, bool $asForm = false): Response
+    /**
+     * @param bool $wrongBodyType send a JSON route's body as a form, or an upload route's fields as JSON
+     */
+    private static function requestAs(string $route, string $actor, bool $wrongBodyType = false): Response
     {
         [$method, $path, $body] = self::MATRIX[$route];
         $client = self::createApiClient();
         $fixture = self::createProjectWithMembers();
+        $version = self::createDataset($fixture['project']);
         if ('anonymous' !== $actor) {
             $user = $fixture[$actor];
             self::assertInstanceOf(User::class, $user);
@@ -126,10 +140,19 @@ final class AuthorizationMatrixTest extends ApiTestCase
             '{projectId}' => $fixture['project']->getId()->toRfc4122(),
             '{userId}' => $fixture['viewer']->getId()->toRfc4122(),
             '{nonMemberEmail}' => $fixture['non-member']->getEmail(),
+            '{datasetId}' => $version->getDataset()->getId()->toRfc4122(),
+            '{versionId}' => $version->getId()->toRfc4122(),
         ];
         $uri = strtr($path, $placeholders);
         $body = null === $body ? null : array_map(static fn (string $value): string => strtr($value, $placeholders), $body);
-        if (!$asForm) {
+
+        if (isset($body['@file'])) {
+            $file = $body['@file'];
+            unset($body['@file']);
+
+            return $wrongBodyType ? self::requestJson($client, $method, $uri, $body) : self::upload($client, $uri, self::fixturePath($file), $file, $body);
+        }
+        if (!$wrongBodyType) {
             return self::requestJson($client, $method, $uri, $body);
         }
 

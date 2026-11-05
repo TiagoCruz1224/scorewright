@@ -1,0 +1,6 @@
+id,input,reference,tags,metadata
+greeting,Say hello,Hello!,"smalltalk, short","{""lang"": ""en""}"
+refund-1,"I want a refund.
+My order is late, and I am ""angry"".",,billing,
+multi,Tabs	and line breaks are fine,"Line 1
+Line 2",,
