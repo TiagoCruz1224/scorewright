@@ -34,18 +34,31 @@ const GUIDANCE_HINTS = {
   automatic: 'Optional: what the check is for.',
 };
 
-/** "Regex: ^Refund", "Length: 1–500 characters": an automatic criterion's check in words. */
+/** "Regex: ^Refund", "Length: 1–500 characters": an automatic criterion's check in words, the typed parts isolated. */
 export function checkText({ checkType, checkParams: params }) {
   const ignoringCase = params.ignoreCase ? ' (ignoring case)' : '';
   switch (checkType) {
     case 'exact_match':
       return `Exact match with the reference${ignoringCase}`;
     case 'contains':
-      return `Contains: “${params.text}”${ignoringCase}`;
+      return (
+        <>
+          Contains: “<bdi>{params.text}</bdi>”{ignoringCase}
+        </>
+      );
     case 'not_contains':
-      return `Does not contain: “${params.text}”${ignoringCase}`;
+      return (
+        <>
+          Does not contain: “<bdi>{params.text}</bdi>”{ignoringCase}
+        </>
+      );
     case 'regex':
-      return `Regex: ${params.pattern}${ignoringCase}`;
+      return (
+        <>
+          Regex: <bdi>{params.pattern}</bdi>
+          {ignoringCase}
+        </>
+      );
     case 'length':
       if (params.min !== null && params.max !== null) {
         return `Length: ${n(params.min)}–${n(params.max)} characters`;
@@ -382,7 +395,11 @@ function CriterionFields({ criterion, index, count, title, problem, onChange, on
     <fieldset className="card">
       <legend className="px-1 font-semibold">
         Criterion {index + 1}
-        {named && `: ${named}`}
+        {named && (
+          <>
+            : <bdi>{named}</bdi>
+          </>
+        )}
       </legend>
       <Field name={path('kind')} label="Kind" as="select" value={criterion.kind} onChange={set('kind')} problem={problem}>
         {Object.entries(KINDS).map(([value, text]) => (
@@ -429,14 +446,14 @@ function CriterionFields({ criterion, index, count, title, problem, onChange, on
       />
       {/* The names say which criterion, after the visible words (WCAG 2.5.3): "Move up: Tone". */}
       <div className="flex flex-wrap gap-2">
-        <button id={`move-up-${criterion.key}`} type="button" className="btn" disabled={index === 0} onClick={() => onMove(-1)}>
-          Move up<span className="sr-only">: {title}</span>
+        <button id={`move-up-${criterion.key}`} type="button" className="btn" disabled={index === 0} onClick={() => onMove(-1)} aria-label={`Move up: ${title}`}>
+          Move up
         </button>
-        <button id={`move-down-${criterion.key}`} type="button" className="btn" disabled={index === count - 1} onClick={() => onMove(1)}>
-          Move down<span className="sr-only">: {title}</span>
+        <button id={`move-down-${criterion.key}`} type="button" className="btn" disabled={index === count - 1} onClick={() => onMove(1)} aria-label={`Move down: ${title}`}>
+          Move down
         </button>
-        <button type="button" className="btn btn-danger" onClick={onRemove}>
-          Remove<span className="sr-only">: {title}</span>
+        <button type="button" className="btn btn-danger" onClick={onRemove} aria-label={`Remove: ${title}`}>
+          Remove
         </button>
       </div>
     </fieldset>
@@ -544,7 +561,12 @@ export function Rubric() {
   const project = useRouteLoaderData('project');
   const result = useActionData();
   const owner = canWrite(project);
-  const messages = { created: `Rubric ${rubric.name} created.`, saved: 'Changes saved.', duplicated: `Copy created: ${rubric.name}. You can edit it.` };
+  const name = <bdi>{rubric.name}</bdi>;
+  const messages = {
+    created: <>Rubric {name} created.</>,
+    saved: 'Changes saved.',
+    duplicated: <>Copy created: {name}. You can edit it.</>,
+  };
   usePageTitle(rubric.name, project.name);
 
   return (
@@ -564,7 +586,11 @@ export function Rubric() {
       )}
       {rubric.duplicatedFrom && (
         <p className="muted">
-          A copy of <Link to={`/projects/${project.id}/rubrics/${rubric.duplicatedFrom.id}`}>{rubric.duplicatedFrom.name}</Link>.
+          A copy of{' '}
+          <Link to={`/projects/${project.id}/rubrics/${rubric.duplicatedFrom.id}`}>
+            <bdi>{rubric.duplicatedFrom.name}</bdi>
+          </Link>
+          .
         </p>
       )}
 
@@ -574,7 +600,7 @@ export function Rubric() {
           {rubric.criteria.map((criterion, index) => (
             <li key={criterion.id} className="card">
               <h3 className="mb-2 text-base">
-                {index + 1}. {criterion.name}
+                {index + 1}. <bdi>{criterion.name}</bdi>
               </h3>
               <dl className="mb-0 grid gap-x-6 gap-y-1 sm:grid-cols-[max-content_1fr]">
                 <dt className="font-semibold">Kind</dt>
@@ -605,7 +631,11 @@ export function Rubric() {
           key={`delete-${rubric.id}-${result?.form === 'delete' ? JSON.stringify(result.problem) : ''}`}
           heading="Delete the rubric"
           button="Delete rubric"
-          question={`Delete the rubric “${rubric.name}” with its ${criteriaCount(rubric.criteria.length)}? This cannot be undone.`}
+          question={
+            <>
+              Delete the rubric “<bdi>{rubric.name}</bdi>” with its {criteriaCount(rubric.criteria.length)}? This cannot be undone.
+            </>
+          }
           problem={result?.form === 'delete' ? result.problem : undefined}
         />
       )}

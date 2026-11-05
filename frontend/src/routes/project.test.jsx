@@ -1,5 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ME, page, project, renderApp } from '../test-utils.jsx';
 
 const members = page([
@@ -19,6 +19,17 @@ const renderPage = (path, fields) =>
   });
 
 const projectNav = () => within(screen.getByRole('navigation', { name: 'Project' }));
+
+describe('the start page', () => {
+  it('sends / to the projects without a React Router warning (SWQ2-10)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { router } = await renderApp('/', { '/api/me': ME, '/api/projects?page=1': page([]) });
+
+    expect(router.state.location.pathname).toBe('/projects');
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('does not have an element or Component');
+    warn.mockRestore();
+  });
+});
 
 describe('project pages show only what the role can do (UX §1.5)', () => {
   it('gives an owner the Members and Settings sections, with every member action', async () => {

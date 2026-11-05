@@ -1,7 +1,7 @@
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useRouteLoaderData } from 'react-router';
 import { api } from '../api/client.js';
 import { attempt, ConfirmDelete, Field, StatusMessage } from '../components/forms.jsx';
-import { ImportFileField, ImportProgress, UploadProblem } from '../components/imports.jsx';
+import { attemptUpload, ImportFileField, ImportProgress, UploadProblem } from '../components/imports.jsx';
 import { Breadcrumb, Pager, usePageTitle } from '../components/layout.jsx';
 
 const dateFormat = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' });
@@ -94,7 +94,7 @@ export function Runs() {
                 </Link>
               </h2>
               <p className="muted mb-0 text-sm">
-                {versionName(run.datasetVersion)} · <strong className="text-text">{coverage(run)}</strong> · imported{' '}
+                <bdi>{versionName(run.datasetVersion)}</bdi> · <strong className="text-text">{coverage(run)}</strong> · imported{' '}
                 <time dateTime={run.createdAt}>{formatDate(run.createdAt)}</time>
               </p>
             </li>
@@ -151,7 +151,8 @@ export async function importRunAction({ params, request }) {
     body.set('file', file);
   }
 
-  return attempt(
+  return attemptUpload(
+    file instanceof File && file.name !== '' ? file : null,
     async () => {
       const run = await api(`/api/projects/${params.projectId}/runs`, { method: 'POST', body, request });
 
@@ -240,12 +241,21 @@ export function Run() {
     <>
       <Breadcrumb items={crumbs(project, { label: run.label })} />
       <h1>{run.label}</h1>
-      <StatusMessage message={created ? `Run ${run.label} imported: ${answers(run.answerCount)} (${n(run.answerCount)} of ${n(version.caseCount)} cases).` : undefined} />
+      <StatusMessage
+        message={
+          created ? (
+            <>
+              Run <bdi>{run.label}</bdi> imported: {answers(run.answerCount)} ({n(run.answerCount)} of {n(version.caseCount)} cases).
+            </>
+          ) : undefined
+        }
+      />
 
       <dl className="mb-8 grid gap-x-6 gap-y-2 sm:grid-cols-[max-content_1fr]">
         <dt className="font-semibold">Dataset version</dt>
         <dd>
-          <Link to={`/projects/${project.id}/datasets/${version.dataset.id}?version=${version.id}`}>{versionName(version)}</Link>
+          <Link to={`/projects/${project.id}/datasets/${version.dataset.id}?version=${version.id}`}><bdi>{versionName(version)}</bdi>
+          </Link>
         </dd>
         <dt className="font-semibold">Coverage</dt>
         <dd>
@@ -256,7 +266,7 @@ export function Run() {
         <dd className="prewrap">{run.modelDescription || <span className="muted">None</span>}</dd>
         <dt className="font-semibold">Imported</dt>
         <dd>
-          <time dateTime={run.createdAt}>{formatDate(run.createdAt)}</time> from <span className="font-mono text-sm">{run.sourceFilename}</span>
+          <time dateTime={run.createdAt}>{formatDate(run.createdAt)}</time> from <bdi className="font-mono text-sm">{run.sourceFilename}</bdi>
         </dd>
       </dl>
       <p className="muted">The answers appear when they are scored, in an evaluation.</p>
@@ -266,7 +276,11 @@ export function Run() {
           key={result?.problem ? JSON.stringify(result.problem) : 'delete'}
           heading="Delete the run"
           button="Delete run"
-          question={`Delete the run “${run.label}” with its ${answers(run.answerCount)}? This cannot be undone.`}
+          question={
+            <>
+              Delete the run “<bdi>{run.label}</bdi>” with its {answers(run.answerCount)}? This cannot be undone.
+            </>
+          }
           problem={result?.problem}
         />
       )}

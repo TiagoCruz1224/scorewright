@@ -135,10 +135,12 @@ function AccountMenu({ user }) {
     <details className="account">
       <summary>
         <span className="sr-only">Account: </span>
-        {user.displayName}
+        <bdi>{user.displayName}</bdi>
       </summary>
       <div className="account-panel">
-        <p className="muted text-sm">Signed in as {user.email}</p>
+        <p className="muted text-sm">
+          Signed in as <bdi>{user.email}</bdi>
+        </p>
         <Form method="post" action="/sign-out">
           <button type="submit" className="btn">
             Sign out
@@ -149,7 +151,10 @@ function AccountMenu({ user }) {
   );
 }
 
-/** `items`: [{label, to}], the last one being the current page. */
+/**
+ * `items`: [{label, to}], the last one being the current page. Labels are often names people typed, so each is
+ * isolated in <bdi>: a bidi control in one (U+202E) cannot reorder the trail (SWQ2-08).
+ */
 export function Breadcrumb({ items }) {
   return (
     <nav aria-label="Breadcrumb" className="breadcrumb">
@@ -157,11 +162,13 @@ export function Breadcrumb({ items }) {
         {items.map((item, index) =>
           index < items.length - 1 ? (
             <li key={item.to}>
-              <Link to={item.to}>{item.label}</Link>
+              <Link to={item.to}>
+                <bdi>{item.label}</bdi>
+              </Link>
             </li>
           ) : (
             <li key={item.label} aria-current="page">
-              {item.label}
+              <bdi>{item.label}</bdi>
             </li>
           ),
         )}

@@ -91,6 +91,8 @@ final class CaseFileReaderTest extends TestCase
         yield 'tag_too_long: 50 characters pass, 51 do not' => ['tag-too-long.csv', [[3, 'tags', 'tag_too_long']]];
         yield 'invalid_metadata in CSV' => ['invalid-metadata.csv', [[2, 'metadata', 'invalid_metadata'], [3, 'metadata', 'invalid_metadata']]];
         yield 'invalid_metadata in JSON' => ['invalid-metadata.json', [[1, 'metadata', 'invalid_metadata'], [2, 'metadata', 'invalid_metadata']]];
+        yield 'invalid_metadata in CSV: a number too large for a float (1e999)' => ['invalid-metadata-overflow.csv', [[3, 'metadata', 'invalid_metadata']]];
+        yield 'invalid_metadata in JSON: a number too large for a float (-1e999)' => ['invalid-metadata-overflow.json', [[2, 'metadata', 'invalid_metadata']]];
         yield 'control_character in CSV' => ['control-character.csv', [[2, 'input', 'control_character'], [3, 'tags', 'control_character'], [4, 'reference', 'control_character']]];
         yield 'control_character in JSON, NUL in metadata included' => ['control-character.json', [[1, 'input', 'control_character'], [2, 'metadata', 'control_character'], [3, 'input', 'control_character']]];
     }
@@ -153,6 +155,24 @@ final class CaseFileReaderTest extends TestCase
         self::assertSame([[null, null, 'invalid_json']], self::errorsOf(self::reader()->read($json(31), 'json')));
         self::assertIsArray(self::reader()->read($csv(30), 'csv'));
         self::assertSame([[2, 'metadata', 'invalid_metadata']], self::errorsOf(self::reader()->read($csv(31), 'csv')));
+    }
+
+    /** SWQ2-01: 1e999 is valid JSON but no 64-bit float; the error says where it is, and nothing is a 500. */
+    public function testANumberTooLargeForAFloatSaysWhereItIs(): void
+    {
+        $error = static function (string $fixture): array {
+            $result = self::readFixture($fixture);
+            self::assertInstanceOf(ImportErrors::class, $result);
+
+            return json_decode((string) $result->toResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR)['errors'][0];
+        };
+
+        $csv = $error('invalid-metadata-overflow.csv');
+        self::assertSame('The number at "limits.max" in the metadata is too large to store. Use a smaller number, or put it in quotes as text.', $csv['message']);
+        self::assertSame('{"limits": {"max": 1e999}}', $csv['excerpt']);
+        $json = $error('invalid-metadata-overflow.json');
+        self::assertStringContainsString('"sizes[1]"', $json['message']);
+        self::assertSame('sizes[1]', $json['excerpt']);
     }
 
     public function testAtMost100ErrorsAreListedWhileTheCountsCoverTheWholeFile(): void

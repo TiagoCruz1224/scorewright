@@ -114,6 +114,18 @@ final class CriterionRulesTest extends TestCase
         self::assertStringContainsString('\ at end of pattern', $message('abc\\'));
     }
 
+    /** SWQ2-06: (?R) compiles but recurses for ever; it gets its own text, never "No error". */
+    public function testAPatternThatFailsWhenItRunsSaysSoApartFromNotCompiling(): void
+    {
+        $errors = CriterionRules::parse(['kind' => 'automatic', 'name' => 'R', 'checkType' => 'regex', 'checkParams' => ['pattern' => '(?R)']]);
+
+        self::assertIsArray($errors);
+        self::assertSame(['checkParams.pattern', 'invalid_regex'], [$errors[0][0], $errors[0][1]]);
+        self::assertStringStartsWith('This pattern compiles but fails when it runs (', $errors[0][2]);
+        self::assertStringNotContainsString('No error', $errors[0][2]);
+        self::assertStringNotContainsString('does not compile', $errors[0][2]);
+    }
+
     public function testTheRegexNeedsNoDelimitersAndHonoursIgnoreCase(): void
     {
         self::assertSame(1, preg_match(CriterionRules::regex('^refund/\d+$', true), 'Refund/42'));

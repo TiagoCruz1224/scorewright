@@ -77,8 +77,11 @@ describe('rubrics', () => {
   it('shows a viewer the rubric read-only, with each check in words', async () => {
     await renderApp('/projects/p1/rubrics/r1', answers('viewer'));
 
-    screen.getByText('Contains: “order” (ignoring case)');
-    screen.getByText('Regex: ^Refund');
+    // The typed parts are isolated in <bdi>, so the words are split across elements.
+    const definitions = screen.getAllByRole('definition').map((definition) => definition.textContent);
+    expect(definitions).toContain('Contains: “order” (ignoring case)');
+    expect(definitions).toContain('Regex: ^Refund');
+    expect(screen.getByText('^Refund').tagName).toBe('BDI');
     expect(screen.getAllByText('1 (default)')).toHaveLength(2);
     for (const name of ['Edit rubric', 'Duplicate', 'Delete rubric', 'Save']) {
       expect(screen.queryByRole('button', { name }) ?? screen.queryByRole('link', { name })).toBeNull();

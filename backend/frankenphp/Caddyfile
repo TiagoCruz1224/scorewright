@@ -3,11 +3,11 @@
 	root /app/public
 	encode zstd br gzip
 
-	# Hard cap on request bodies, equal to post_max_size in app.ini (architecture §9). Caddy only enforces it while
-	# the body is read, so a body without Content-Length is cut off here; a larger Content-Length is answered with
-	# 413 by Symfony (App\Http\RequestBodyLimitListener).
+	# The request body limit is 6 MiB (post_max_size in app.ini, architecture §9), and Symfony answers a larger
+	# Content-Length with 413 problem+json (App\Http\RequestBodyLimitListener). Caddy's own cap sits above it, at
+	# 8 MiB, so that Symfony answers the bodies in between; beyond it, Caddy answers (handle_errors below).
 	request_body {
-		max_size 6MiB
+		max_size 8MiB
 	}
 
 	header {
@@ -18,4 +18,18 @@
 	}
 
 	php_server
+
+	# A body over 8 MiB never reaches PHP: answer as the API does, with Problem Details, the same security headers,
+	# no-store and no Server header.
+	handle_errors 413 {
+		header {
+			-Server
+			Content-Type application/problem+json
+			Cache-Control no-store
+			Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+			X-Content-Type-Options nosniff
+			Referrer-Policy same-origin
+		}
+		respond `{"type":"/problems/payload-too-large","title":"Payload Too Large","status":413,"code":"payload_too_large"}` 413
+	}
 }

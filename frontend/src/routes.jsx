@@ -36,7 +36,8 @@ export const routes = [
       {
         ErrorBoundary: ErrorPage,
         children: [
-          { index: true, loader: () => redirect('/projects') },
+          // The loader always redirects; the empty Component keeps React Router from warning about a route without one.
+          { index: true, loader: () => redirect('/projects'), Component: () => null },
           { path: 'sign-in', action: signInAction, Component: SignIn },
           { path: 'register', action: registerAction, Component: Register },
           { path: 'sign-out', action: signOutAction },

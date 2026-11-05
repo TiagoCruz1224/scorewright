@@ -1,7 +1,7 @@
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useRouteLoaderData } from 'react-router';
 import { api } from '../api/client.js';
 import { attempt, ConfirmDelete, Field, StatusMessage } from '../components/forms.jsx';
-import { ImportFileField, ImportProgress, UploadProblem } from '../components/imports.jsx';
+import { attemptUpload, ImportFileField, ImportProgress, UploadProblem } from '../components/imports.jsx';
 import { Breadcrumb, Pager, usePageTitle } from '../components/layout.jsx';
 
 const dateFormat = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' });
@@ -29,7 +29,7 @@ function uploadOf(form, fields = {}) {
     body.set('file', file);
   }
 
-  return { body, fileName: file instanceof File ? file.name : '' };
+  return { body, file: file instanceof File && file.name !== '' ? file : null, fileName: file instanceof File ? file.name : '' };
 }
 
 export async function datasetsLoader({ params, request }) {
@@ -98,9 +98,10 @@ export function Datasets() {
 
 export async function newDatasetAction({ params, request }) {
   const form = await request.formData();
-  const { body, fileName } = uploadOf(form, { name: form.get('name') });
+  const { body, file, fileName } = uploadOf(form, { name: form.get('name') });
 
-  return attempt(
+  return attemptUpload(
+    file,
     async () => {
       const dataset = await api(`/api/projects/${params.projectId}/datasets`, { method: 'POST', body, request });
 
@@ -219,7 +220,8 @@ export function Dataset() {
               <Link className="inline-flex min-h-6 items-center" to={`?version=${candidate.id}`} aria-current={candidate.id === version.id ? 'true' : undefined}>
                 v{candidate.number}
               </Link>
-              : {cases(candidate.caseCount)}, from <span className="font-mono text-sm">{candidate.sourceFilename}</span>, imported{' '}
+              : {cases(candidate.caseCount)}, from{' '}
+              <bdi className="font-mono text-sm">{candidate.sourceFilename}</bdi>, imported{' '}
               <time dateTime={candidate.createdAt}>{formatDate(candidate.createdAt)}</time>
               {candidate.id === version.id && <strong> (shown below)</strong>}
             </li>
@@ -253,7 +255,13 @@ export function Dataset() {
           key={result?.problem ? JSON.stringify(result.problem) : 'delete'}
           heading="Delete the dataset"
           button="Delete dataset"
-          question={`Delete “${dataset.name}” with ${dataset.versions.length === 1 ? 'its version, cases and runs' : `its ${dataset.versions.length} versions and all their cases and runs`}? This cannot be undone.`}
+          question={
+            <>
+              Delete “<bdi>{dataset.name}</bdi>” with{' '}
+              {dataset.versions.length === 1 ? 'its version, cases and runs' : `its ${dataset.versions.length} versions and all their cases and runs`}? This cannot
+              be undone.
+            </>
+          }
           problem={result?.problem}
         />
       )}
@@ -287,7 +295,7 @@ export function CaseTable({ items }) {
                   <ul className="flex flex-wrap gap-1">
                     {testCase.tags.map((tag) => (
                       <li key={tag} className="badge">
-                        {tag}
+                        <bdi>{tag}</bdi>
                       </li>
                     ))}
                   </ul>
@@ -309,9 +317,10 @@ export async function importVersionLoader({ params, request }) {
 }
 
 export async function importVersionAction({ params, request }) {
-  const { body, fileName } = uploadOf(await request.formData());
+  const { body, file, fileName } = uploadOf(await request.formData());
 
-  return attempt(
+  return attemptUpload(
+    file,
     async () => {
       const version = await api(`/api/projects/${params.projectId}/datasets/${params.datasetId}/versions`, { method: 'POST', body, request });
 
@@ -336,7 +345,7 @@ export function ImportVersion() {
       {canWrite(project) ? (
         <>
           <p>
-            The file becomes version v{dataset.versions[0].number + 1} of “{dataset.name}”. Earlier versions do not change.
+            The file becomes version v{dataset.versions[0].number + 1} of “<bdi>{dataset.name}</bdi>”. Earlier versions do not change.
           </p>
           <UploadProblem problem={result?.problem} fileName={result?.fileName} unchanged={`Version v${dataset.versions[0].number} is unchanged.`} />
           <Form method="post" encType="multipart/form-data" noValidate className="max-w-xl">

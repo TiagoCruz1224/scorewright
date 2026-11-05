@@ -63,9 +63,12 @@ export function signInPath(next) {
   return `/sign-in?next=${encodeURIComponent(next)}`;
 }
 
-/** Where to go after signing in: a path on this site only, never another origin. */
+/**
+ * Where to go after signing in: a path on this site only, never another origin. No spaces or control characters
+ * anywhere: the browser drops a TAB or a line feed, so "/\t/evil.example" would become "//evil.example" (SWQ2-07).
+ */
 export function safeNext(next) {
-  return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : '/projects';
+  return typeof next === 'string' && /^\/(?![/\\])[^\s\p{Cc}]*$/u.test(next) ? next : '/projects';
 }
 
 async function problemOf(response) {

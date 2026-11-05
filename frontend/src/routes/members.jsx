@@ -71,10 +71,12 @@ export function Members() {
         {list.items.map((member) => (
           <li key={member.userId} className="card">
             <p className="mb-0 font-semibold">
-              {member.displayName}
+              <bdi>{member.displayName}</bdi>
               {member.userId === user.id && ' (you)'}
             </p>
-            <p className="muted mb-3 text-sm">{member.email}</p>
+            <p className="muted mb-3 text-sm">
+              <bdi>{member.email}</bdi>
+            </p>
             {canManage ? (
               <MemberActions
                 key={`${member.role}-${result?.userId === member.userId ? result.at : ''}`}
@@ -157,7 +159,7 @@ function MemberActions({ member, isSelf, result }) {
           <input type="hidden" name="intent" value="remove" />
           {hidden}
           <p className="mb-0">
-            Remove {member.displayName} from the project?{isSelf && ' You will lose access to it.'}
+            Remove <bdi>{member.displayName}</bdi> from the project?{isSelf && ' You will lose access to it.'}
           </p>
           <button type="submit" className="btn btn-danger" autoFocus>
             Remove

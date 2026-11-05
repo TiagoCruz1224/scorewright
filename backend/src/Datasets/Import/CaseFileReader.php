@@ -192,7 +192,15 @@ final class CaseFileReader
             return null;
         }
 
-        $json = json_encode($value, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_PRESERVE_ZERO_FRACTION);
+        try {
+            $json = json_encode($value, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_PRESERVE_ZERO_FRACTION);
+        } catch (\JsonException) {
+            // JSON allows 1e999, but it does not fit in a 64-bit float: PHP reads it as INF, which JSON cannot store.
+            $path = self::infinitePath($value) ?? '';
+            $errors->add($location, 'metadata', 'invalid_metadata', \sprintf('The number at "%s" in the metadata is too large to store. Use a smaller number, or put it in quotes as text.', $path), '' !== $excerpt ? $excerpt : $path);
+
+            return null;
+        }
         if (\strlen($json) > self::MAX_METADATA_BYTES) {
             $errors->add($location, 'metadata', 'metadata_too_large', \sprintf('The metadata takes %s bytes as JSON; the limit is %s. Keep only what you need.', number_format(\strlen($json)), number_format(self::MAX_METADATA_BYTES)), $json);
 
@@ -206,5 +214,26 @@ final class CaseFileReader
         }
 
         return $json;
+    }
+
+    /** Where the first number too large for a 64-bit float is, such as "limits.max" or "sizes[2]". */
+    private static function infinitePath(mixed $value, string $path = ''): ?string
+    {
+        if (\is_float($value) && !is_finite($value)) {
+            return $path;
+        }
+        $children = $value instanceof \stdClass ? get_object_vars($value) : (\is_array($value) ? $value : []);
+        foreach ($children as $key => $child) {
+            $found = self::infinitePath($child, match (true) {
+                \is_int($key) && \is_array($value) => $path."[$key]",
+                '' === $path => (string) $key,
+                default => "$path.$key",
+            });
+            if (null !== $found) {
+                return $found;
+            }
+        }
+
+        return null;
     }
 }

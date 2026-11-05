@@ -117,6 +117,16 @@ export function ImportFormat() {
         An array of objects with the same fields. <code>id</code> is a string or a whole number, <code>tags</code> an array of strings and <code>metadata</code> an
         object. Errors are numbered by item, from 1.
       </p>
+      <ul className="mb-3 list-disc pl-6">
+        <li>
+          A key repeated in one object: <strong>the last one wins</strong>, as in a browser. <code>{'{"input": "a", "input": "b"}'}</code> imports <code>b</code>, in{' '}
+          <code>metadata</code> too.
+        </li>
+        <li>
+          Numbers in <code>metadata</code> are read as 64-bit floating point: one with more digits than that holds is rounded, and one too large to hold,
+          such as <code>1e999</code>, is an error. Put a number in quotes to keep it exactly as text.
+        </li>
+      </ul>
       <pre className="example" tabIndex={0} aria-label="JSON example">
         {JSON_EXAMPLE}
       </pre>

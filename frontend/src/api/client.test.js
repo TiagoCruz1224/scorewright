@@ -89,7 +89,8 @@ describe('api', () => {
 describe('safeNext', () => {
   it('only goes back to a path on this site', () => {
     expect(safeNext('/projects/1/members?page=2')).toBe('/projects/1/members?page=2');
-    for (const unsafe of ['//evil.example', '/\\evil.example', 'https://evil.example', 'javascript:alert(1)', null]) {
+    expect(safeNext('/')).toBe('/');
+    for (const unsafe of ['//evil.example', '/\\evil.example', 'https://evil.example', 'javascript:alert(1)', null, '/\t/evil.example', '/\n/evil.example', '/ /evil.example', '/projects\u0000', '/projects\u00a0x']) {
       expect(safeNext(unsafe)).toBe('/projects');
     }
   });

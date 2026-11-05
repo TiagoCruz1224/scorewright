@@ -14,7 +14,8 @@ the endpoints that exist. Every route is also listed in the authorization matrix
   `Sec-Fetch-Site` header shows another site, or with `Origin: null`, answers `403 csrf_failed`. Login and register
   are covered too.
 - **Request bodies** are JSON only: send `Content-Type: application/json`, otherwise the answer is
-  `415 unsupported_media_type`. A body larger than 6 MiB answers `413 payload_too_large` before it is read. Bodies
+  `415 unsupported_media_type`. A body larger than 6 MiB answers `413 payload_too_large` (Problem Details, like every
+  error) before it is read; over 8 MiB the web server answers it, with the same body and headers. Bodies
   and query strings are validated; unknown fields are rejected.
 - **Text fields** reject control characters (`control_character`), such as NUL or escape. Fields that can span lines
   (a project description) accept tab, line feed and carriage return.
@@ -49,12 +50,13 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 | 404 | `not_found` (also: a project you are not a member of, and any path that does not exist, `/api` included) |
 | 405 | `method_not_allowed` |
 | 409 | `project_archived` (any write to an archived project except restore), `last_owner`, `rubric_locked` (an edit of a rubric that an evaluation uses), `evaluation_closed` (scoring or closing a closed evaluation), `in_use` (deleting a dataset, run or rubric that an evaluation uses; see [Deleting what an evaluation uses](#deleting-what-an-evaluation-uses)) |
-| 413 | `payload_too_large` (body over 6 MiB, or an import file over 5 MiB) |
+| 413 | `payload_too_large` (body over 6 MiB, or an import file over 5 MiB); always Problem Details, also over 8 MiB, where the web server answers |
 | 415 | `unsupported_media_type` (a body that is not `application/json`, or none where one is needed; for uploads, not `multipart/form-data`) |
-| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken`, `label_taken`, `not_found` (a dataset version that is not the project's), `required` (a missing upload), `is_null` (a value that must be sent), for rubrics `too_few`, `too_many`, `not_allowed`, `invalid_regex` and `max_below_min`, and for evaluations `duplicate_run`, `other_dataset_version` and `not_manual` |
+| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `invalid_characters` (a value that is not valid UTF-8, in a form field or a query), `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken`, `label_taken`, `not_found` (a dataset version that is not the project's), `required` (a missing upload), `is_null` (a value that must be sent), for rubrics `too_few`, `too_many`, `not_allowed`, `invalid_regex` and `max_below_min`, and for evaluations `duplicate_run`, `other_dataset_version` and `not_manual` |
 | 422 | `import_rejected`: the dataset file has errors and nothing was saved (see [Import errors](#import-errors)) |
-| 429 | `too_many_login_attempts`, `too_many_registrations`, `too_many_invites`, `too_many_projects`; with `Retry-After` |
+| 429 | `too_many_login_attempts`, `too_many_registrations`, `too_many_invites`, `too_many_projects`, or `too_many_requests` for any other; with `Retry-After` |
 | 500 | `internal_error` (details are only in the server log) |
+| other | `http_error`: a status this table does not list, with its standard title |
 | 503 | `database_unavailable` (health check) |
 
 ## Endpoints
@@ -213,6 +215,13 @@ My order is late.",,billing,
 
 **JSON.** An array of objects with the same fields. `id` is a string or a whole number, `tags` an array of strings.
 
+- **A key repeated in one object: the last one wins**, as with `JSON.parse` in a browser. `{"input": "a", "input": "b"}`
+  imports `b`, and the same holds inside `metadata`. Check the file for repeated keys before importing it.
+- **Numbers in `metadata` are JSON numbers read as 64-bit floating point.** A number with more digits than that holds
+  is rounded (`123456789012345678901234567890` comes back as `123456789012345680000000000000`), `-0.0` is stored as `0.0` and
+  a number too small to hold becomes `0.0`. A number too large to hold, such as `1e999`, is refused
+  (`invalid_metadata`, with where it is). Put a number in quotes to keep it exactly as text.
+
 ```json
 [
   { "id": "greeting", "input": "Say hello", "reference": "Hello!", "tags": ["smalltalk", "short"], "metadata": { "lang": "en" } },
@@ -266,7 +275,7 @@ My order is late.",,billing,
 | `duplicate_case_key` | an id that an earlier case already uses; in a run, a second answer to the same case |
 | `too_many_tags` | more than 20 tags |
 | `tag_too_long` | a tag over 50 characters |
-| `invalid_metadata` | metadata that is not a JSON object (in CSV, also invalid JSON or nested deeper than 30 levels) |
+| `invalid_metadata` | metadata that is not a JSON object (in CSV, also invalid JSON or nested deeper than 30 levels), or that holds a number too large for a 64-bit float, such as `1e999` |
 | `metadata_too_large` | metadata over 10,240 bytes as JSON |
 | `control_character` | a control character in a value (tab and line breaks are fine in input and reference), or NUL in metadata |
 

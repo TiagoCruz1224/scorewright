@@ -1,0 +1,4 @@
+[
+  { "input": "fine" },
+  { "input": "huge", "metadata": { "sizes": [1, -1e999] } }
+]

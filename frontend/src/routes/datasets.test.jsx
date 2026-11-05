@@ -20,6 +20,23 @@ const renderDataset = (role, path = '/projects/p1/datasets/d1') =>
   });
 
 describe('dataset page', () => {
+  it('isolates what people typed, so a bidi control cannot reorder the page (SWQ2-08)', async () => {
+    const rlo = '\u202E';
+    await renderApp('/projects/p1/datasets/d1', {
+      '/api/me': ME,
+      '/api/projects/p1': project({ role: 'owner', name: `Support${rlo}bot` }),
+      '/api/projects/p1/datasets/d1': { ...dataset, name: `Cases${rlo}x`, versions: [{ ...version(2, 2), sourceFilename: `evil${rlo}gnp.csv` }] },
+      '/api/projects/p1/dataset-versions/v2/cases?page=1': page([{ ...cases.items[0], tags: [`tag${rlo}x`] }]),
+    });
+
+    for (const text of [`evil${rlo}gnp.csv`, `tag${rlo}x`]) {
+      expect(screen.getByText(text).tagName).toBe('BDI');
+    }
+    const trail = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+    expect(trail.getByText(`Support${rlo}bot`).tagName).toBe('BDI');
+    expect(trail.getByText(`Cases${rlo}x`).tagName).toBe('BDI');
+  });
+
   it('shows the cases as text, never as HTML', async () => {
     await renderDataset('owner');
 

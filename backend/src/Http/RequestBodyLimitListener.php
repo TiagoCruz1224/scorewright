@@ -10,8 +10,9 @@ use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
  * 413 for a body larger than PHP's post_max_size (6 MiB: a 5 MB import file plus the multipart overhead, architecture
- * §9). PHP drops such a body before Symfony runs, so without this check the request would just look empty. Caddy
- * (request_body max_size in the Caddyfile) cuts off a body without Content-Length at the same size.
+ * §9). PHP drops such a body before Symfony runs, so without this check the request would just look empty. Caddy lets
+ * bodies up to 8 MiB through to here (request_body max_size in the Caddyfile) and answers larger ones itself, with the
+ * same Problem Details.
  */
 #[AsEventListener(event: KernelEvents::REQUEST, priority: 256)]
 final class RequestBodyLimitListener

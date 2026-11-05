@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Link, useNavigation } from 'react-router';
 import { IMPORT_ERROR_NAMES, LIMITS, MAX_FILE_SIZE } from '../importFormat.js';
-import { ErrorSummary, Field, StatusMessage } from './forms.jsx';
+import { attempt, ErrorSummary, Field, StatusMessage } from './forms.jsx';
 
 const count = (number, word) => `${number.toLocaleString('en')} ${word}${number === 1 ? '' : 's'}`;
 
@@ -30,6 +30,41 @@ export function ImportFileField({ problem, rows = 'cases', columns = DATASET_COL
       }
     />
   );
+}
+
+/** The problem of a file over the import limit, as the API's 413 would say it. */
+const TOO_LARGE = { status: 413, code: 'payload_too_large', title: 'Payload Too Large', errors: [] };
+
+/** The upload did not get an answer from the API: the connection failed, or the proxy in front of it gave up. */
+const NOT_SENT = {
+  status: 0,
+  code: 'upload_failed',
+  title: `The file could not be sent. Check that it is at most ${MAX_FILE_SIZE} and that you are online, then try again.`,
+  errors: [],
+};
+
+/**
+ * Sends an import (`call`) and turns what can go wrong into a problem for the form (SWQ2-02), so the page keeps the
+ * form and what was chosen (WCAG 3.3.7) instead of becoming an error page:
+ * - a file over the limit is refused here, before it is uploaded;
+ * - a network error, or a gateway error (502–504: a proxy may drop a large upload), says the file could not be sent;
+ * - an API error is the API's problem, as attempt() gives it.
+ */
+export async function attemptUpload(file, call, extra = {}) {
+  if (file instanceof File && file.size > LIMITS.maxFileBytes) {
+    return { ...extra, problem: TOO_LARGE };
+  }
+  try {
+    const result = await attempt(call, extra);
+
+    return [502, 503, 504].includes(result?.problem?.status) ? { ...extra, problem: NOT_SENT } : result;
+  } catch (error) {
+    // fetch() rejects with a TypeError when the request cannot be made or the connection drops.
+    if (error instanceof TypeError) {
+      return { ...extra, problem: NOT_SENT };
+    }
+    throw error;
+  }
 }
 
 /** While the file uploads and the API checks it (UX §3.2): a status message, read out by screen readers. */

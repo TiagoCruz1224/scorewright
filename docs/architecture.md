@@ -306,9 +306,11 @@ Conventions:
   - Text fields reject control characters with the reusable `App\Http\NoControlCharacters` constraint (code
     `control_character`); multi-line fields allow tab, line feed and carriage return. Imports use it too.
   - Tests cover all of this.
-- **Body size:** a request body is at most **6 MiB** (the 5 MiB import file of §9 plus the multipart overhead).
-  Caddy (`request_body max_size`) and PHP (`post_max_size`, `upload_max_filesize`) share the limit, and a larger
-  `Content-Length` answers `413 payload_too_large` before anything is parsed.
+- **Body size:** a request body is at most **6 MiB** (the 5 MiB import file of §9 plus the multipart overhead), PHP's
+  `post_max_size` and `upload_max_filesize`. A larger `Content-Length` answers `413 payload_too_large` before anything
+  is parsed (`RequestBodyLimitListener`). Caddy's `request_body max_size` is 8 MiB, above that, so Symfony answers the
+  bodies in between; over 8 MiB Caddy answers itself (`handle_errors`), with the same Problem Details, security
+  headers and `no-store`.
 - **Imports** are `multipart/form-data` with one file in the `file` field. Size is checked before parsing. The file
   format, its limits and every import error code are in [api.md](api.md#import-format).
 - Responses carry `Cache-Control: no-store`.
@@ -508,7 +510,7 @@ OWASP ASVS level 1 is the reference. The concrete rules for this project:
     checked by the app (parameters `dataset_import.max_file_bytes` and `dataset_import.max_cases` in
     `backend/config/services.yaml`), plus the field limits in §4. Raising the file limit above about 6 MB means
     raising `post_max_size`, `upload_max_filesize` (`backend/frankenphp/app.ini`) and `request_body max_size`
-    (`backend/frankenphp/Caddyfile`) with it.
+    (`backend/frankenphp/Caddyfile`, kept 2 MiB above) with it.
   - JSON parsing has a depth limit.
   - PHP errors go to the log only (`display_errors = Off`, also in development).
   - Uploaded files are parsed in memory, **never stored or served back** ([ADR 0004](adr/0004-synchronous-all-or-nothing-imports.md)).

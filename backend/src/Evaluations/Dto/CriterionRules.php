@@ -205,9 +205,9 @@ final class CriterionRules
         if (null === $pattern) {
             return null;
         }
-        $reason = self::compileError(self::regex($pattern, false));
-        if (null !== $reason) {
-            $errors[] = ['checkParams.pattern', 'invalid_regex', "This pattern does not compile: $reason. Fix it, or put a backslash before a special character to match it as text."];
+        $problem = self::regexProblem(self::regex($pattern, false));
+        if (null !== $problem) {
+            $errors[] = ['checkParams.pattern', 'invalid_regex', $problem];
 
             return null;
         }
@@ -215,8 +215,13 @@ final class CriterionRules
         return $pattern;
     }
 
-    /** PCRE's reason when the regex does not compile, such as "missing closing parenthesis at offset 7". */
-    private static function compileError(string $regex): ?string
+    /**
+     * Why the regex cannot be used, tried on an empty answer:
+     * - it does not compile: PHP warns, with PCRE's reason ("missing closing parenthesis at offset 7");
+     * - it compiles but fails when it runs, such as (?R), which recurses for ever: no warning, but preg_last_error_msg()
+     *   says why ("JIT stack limit exhausted").
+     */
+    private static function regexProblem(string $regex): ?string
     {
         $warning = '';
         set_error_handler(static function (int $level, string $message) use (&$warning): bool {
@@ -225,20 +230,23 @@ final class CriterionRules
             return true;
         });
         try {
-            $compiles = false !== preg_match($regex, '');
+            $matched = preg_match($regex, '');
+            $runError = preg_last_error_msg(); // before any other preg_ call resets it
         } finally {
             restore_error_handler();
         }
-        if ($compiles) {
+        if (false !== $matched) {
             return null;
         }
-        // A pattern that ends in a lone backslash escapes the closing delimiter; PCRE itself would say this.
-        if (str_contains($warning, 'No ending delimiter')) {
-            return '\ at end of pattern';
-        }
 
-        // "preg_match(): Compilation failed: missing closing parenthesis at offset 7"
-        return preg_replace('/^preg_match\(\): (Compilation failed: )?/', '', $warning) ?: preg_last_error_msg();
+        if ('' === $warning) {
+            return "This pattern compiles but fails when it runs ($runError), even on an empty answer. Simplify it, for example without a recursion that never ends.";
+        }
+        // A pattern that ends in a lone backslash escapes the closing delimiter; PCRE itself would say this.
+        // Otherwise: "preg_match(): Compilation failed: missing closing parenthesis at offset 7".
+        $reason = str_contains($warning, 'No ending delimiter') ? '\ at end of pattern' : preg_replace('/^preg_match\(\): (Compilation failed: )?/', '', $warning);
+
+        return "This pattern does not compile: $reason. Fix it, or put a backslash before a special character to match it as text.";
     }
 
     /**
