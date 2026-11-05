@@ -123,7 +123,7 @@ function InviteForm({ result }) {
       </div>
       <div className="card-body">
         <ErrorSummary problem={result?.problem} idPrefix="invite" />
-        <Form method="post" noValidate className="flex flex-wrap items-start gap-3">
+        <Form method="post" noValidate className="@container flex flex-wrap items-start gap-3">
           <input type="hidden" name="intent" value="invite" />
           <Field
             idPrefix="invite"
@@ -139,7 +139,8 @@ function InviteForm({ result }) {
           <Field idPrefix="invite" name="role" label="Role" as="select" defaultValue="viewer" className="w-[180px]" problem={result?.problem}>
             <RoleOptions />
           </Field>
-          <button type="submit" className="btn btn-primary mt-[26px]">
+          {/* Level with the inputs, below their labels, only while the three fit on one line (280 + 180 + 88 px and the gaps). */}
+          <button type="submit" className="btn btn-primary @min-[36rem]:mt-[26px]">
             <Icon name="mail" />
             Invite
           </button>

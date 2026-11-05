@@ -469,7 +469,7 @@ function RubricEditor({ rubric, cancelTo }) {
         </div>
       </div>
 
-      <div className="savebar mt-6">
+      <div className="savebar">
         <p className="small muted">Saving checks every criterion. Nothing changes until it passes.</p>
         <div className="actions">
           <Link className="btn" to={cancelTo}>
@@ -490,6 +490,26 @@ function CriterionFields({ criterion, index, count, title, problem, hasError, on
   const set = (field) => (event) => onChange({ [field]: event.target.type === 'checkbox' ? event.target.checked : event.target.value });
   const named = criterion.name.trim();
   const kindId = `field-${path('kind')}`;
+  const weight = (
+    <Field
+      name={path('weight')}
+      label={
+        <>
+          Weight <span className="opt">(optional)</span>
+        </>
+      }
+      type="number"
+      inputMode="decimal"
+      step="any"
+      min="0"
+      max="100"
+      style={{ maxWidth: 120 }}
+      value={criterion.weight}
+      onChange={set('weight')}
+      hint="Above 0 and at most 100. Empty counts as 1."
+      problem={problem}
+    />
+  );
 
   return (
     <fieldset className={hasError ? 'crit has-error' : 'crit'} id={`crit-${criterion.key}`}>
@@ -535,24 +555,8 @@ function CriterionFields({ criterion, index, count, title, problem, hasError, on
           </div>
         </fieldset>
         <Field name={path('name')} label="Name" value={criterion.name} onChange={set('name')} autoComplete="off" hint="Up to 200 characters, on one line." problem={problem} />
-        <Field
-          name={path('weight')}
-          label={
-            <>
-              Weight <span className="opt">(optional)</span>
-            </>
-          }
-          type="number"
-          inputMode="decimal"
-          step="any"
-          min="0"
-          max="100"
-          style={{ maxWidth: 120 }}
-          value={criterion.weight}
-          onChange={set('weight')}
-          hint="Above 0 and at most 100. Empty counts as 1."
-          problem={problem}
-        />
+        {criterion.kind !== 'automatic' && weight}
+        {/* Automatic: Name beside Check, then the check's parameters (Minimum beside Maximum), then Weight. */}
         {criterion.kind === 'automatic' && (
           <>
             <Field name={path('checkType')} label="Check" as="select" value={criterion.checkType} onChange={set('checkType')} problem={problem}>
@@ -563,6 +567,7 @@ function CriterionFields({ criterion, index, count, title, problem, hasError, on
               ))}
             </Field>
             <CheckParams criterion={criterion} path={path} set={set} problem={problem} />
+            {weight}
           </>
         )}
         <Field

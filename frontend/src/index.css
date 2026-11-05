@@ -206,7 +206,7 @@
   .crumbs ol { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 13px; line-height: 18px; color: var(--text-muted); margin-bottom: 8px; }
   .crumbs a { color: var(--text-muted); text-decoration: none; display: inline-flex; min-height: 24px; align-items: center; }
   .crumbs a:hover { color: var(--text); text-decoration: underline; }
-  .crumbs li + li::before { content: "/"; margin-right: 6px; color: var(--border-strong); }
+  .crumbs li + li::before { content: "/" / ""; margin-right: 6px; color: var(--border-strong); }
   .crumbs [aria-current="page"] { color: var(--text); }
   .page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
   .page-title { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.022em; }
@@ -356,8 +356,13 @@
   .crit-outline a { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; border-radius: 6px; color: var(--text-muted); text-decoration: none; }
   .crit-outline a:hover { background: var(--surface-2); color: var(--text); }
   .crit-outline a.is-error { color: var(--danger); }
-  .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--bg); }
-  
+  /* Fixed from edge to edge of the window: the canvas puts it outside main.page, which the app shell cannot. Pages
+     with one get room below their last field, and focus scrolls clear of it even when it wraps to two lines at 320 px
+     (about 110 px high; WCAG 2.4.11). */
+  .savebar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--bg); }
+    .page:has(.savebar) { padding-bottom: 144px; }
+  html:has(.savebar) { scroll-padding-bottom: 128px; }
+
   /* ---------- Phase 2: auth, overview, evaluations, scoring, results ---------- */
   .auth { max-width: 400px; margin: 72px auto 96px; padding: 0 16px; }
   .auth-card { display: flex; flex-direction: column; gap: 20px; padding: 28px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }

@@ -121,4 +121,17 @@ describe('rubrics', () => {
     expect([...row.querySelectorAll('td')].map((cell) => cell.textContent)).toEqual(['3', 'Locked: used in an evaluation']);
     expect(screen.queryByRole('link', { name: 'New rubric' })).toBeNull();
   });
+
+  it('orders an automatic criterion’s fields as the canvas does: Name beside Check, its parameters, then Weight (SWD2b)', async () => {
+    const length = { id: 'k4', kind: 'automatic', name: 'Short enough', guidance: '', weight: null, checkType: 'length', checkParams: { min: 1, max: 1200 } };
+    await renderApp('/projects/p1/rubrics/r1/edit', answers('owner', rubric({ criteria: [...rubric().criteria, length] })));
+
+    const labels = [...document.querySelectorAll('fieldset.crit > .crit-body')].map((body) => [...body.querySelectorAll('.label')].map((label) => label.textContent));
+    expect(labels).toEqual([
+      ['Kind', 'Name', 'Weight (optional)', 'Guidance'],
+      ['Kind', 'Name', 'Check', 'Text', 'Weight (optional)', 'Guidance (optional)'],
+      ['Kind', 'Name', 'Check', 'Pattern', 'Weight (optional)', 'Guidance (optional)'],
+      ['Kind', 'Name', 'Check', 'Minimum', 'Maximum', 'Weight (optional)', 'Guidance (optional)'],
+    ]);
+  });
 });

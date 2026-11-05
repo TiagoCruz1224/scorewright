@@ -181,7 +181,6 @@ export async function overviewLoader({ params, request }) {
 export function Overview() {
   const project = useRouteLoaderData('project');
   const { hasDataset, hasRun, hasRubric } = useLoaderData();
-  const role = ROLES[project.role];
   const steps = [
     { label: 'Import a dataset', done: hasDataset, to: 'datasets/new' },
     { label: 'Import runs', done: hasRun, to: 'runs/new' },
@@ -204,48 +203,61 @@ export function Overview() {
         </div>
       </div>
 
-      <div className="grid-main">
-        <div className="stack" style={{ gap: 32 }}>
-          {project.role === 'owner' && (
-            <section className="card" aria-labelledby="next-steps-heading">
-              <div className="card-head">
-                <h2 className="card-title" id="next-steps-heading">
-                  Next steps
-                </h2>
-                <span className="small muted">
-                  {steps.filter((step) => step.done).length} of {steps.length} done
-                </span>
-              </div>
-              {/* The last step (evaluation) joins this list with its screens. */}
-              <ol className="steps">
-                {steps.map((step, index) => (
-                  <li key={step.label} className={step.done ? 'step is-done' : 'step'}>
-                    <span className="step-mark">{step.done ? <Icon name="check" /> : index + 1}</span>
-                    {step.done || project.archivedAt ? <span>{step.label}</span> : <Link to={`/projects/${project.id}/${step.to}`}>{step.label}</Link>}
-                    <span className="step-state">{step.done ? 'Done' : step === next && !project.archivedAt ? 'Next' : ''}</span>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          )}
+      {/*
+        The owner's main column has the next steps. Other roles get "Your evaluations" there with the evaluation
+        screens (slice 11); until then their role card stands alone, left-aligned, instead of beside an empty column.
+      */}
+      {project.role === 'owner' ? (
+        <div className="grid-main">
+          <section className="card" aria-labelledby="next-steps-heading">
+            <div className="card-head">
+              <h2 className="card-title" id="next-steps-heading">
+                Next steps
+              </h2>
+              <span className="small muted">
+                {steps.filter((step) => step.done).length} of {steps.length} done
+              </span>
+            </div>
+            {/* The last step (evaluation) joins this list with its screens. */}
+            <ol className="steps">
+              {steps.map((step, index) => (
+                <li key={step.label} className={step.done ? 'step is-done' : 'step'}>
+                  <span className="step-mark">{step.done ? <Icon name="check" /> : index + 1}</span>
+                  {step.done || project.archivedAt ? <span>{step.label}</span> : <Link to={`/projects/${project.id}/${step.to}`}>{step.label}</Link>}
+                  <span className="step-state">{step.done ? 'Done' : step === next && !project.archivedAt ? 'Next' : ''}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+          <RoleCard project={project} />
         </div>
-        <aside className="card" aria-labelledby="role-heading">
-          <div className="card-head">
-            <h2 className="card-title" id="role-heading">
-              Your role
-            </h2>
-            <RoleBadge role={project.role} />
-          </div>
-          <div className="card-body stack" style={{ gap: 12 }}>
-            <p>{role.description}</p>
-            {project.role === 'owner' && (
-              <Link className="inline-flex min-h-6 items-center self-start" to={`/projects/${project.id}/members`}>
-                Manage members
-              </Link>
-            )}
-          </div>
-        </aside>
-      </div>
+      ) : (
+        <RoleCard project={project} className="max-w-[480px]" />
+      )}
     </>
+  );
+}
+
+function RoleCard({ project, className = '' }) {
+  const role = ROLES[project.role];
+
+  return (
+    <aside className={`card ${className}`.trim()} aria-labelledby="role-heading">
+      <div className="card-head">
+        <h2 className="card-title" id="role-heading">
+          Your role
+        </h2>
+        <RoleBadge role={project.role} />
+      </div>
+      <div className="card-body stack" style={{ gap: 12 }}>
+        <p>{role.description}</p>
+        <p className="small muted">{role.detail}</p>
+        {project.role === 'owner' && (
+          <Link className="inline-flex min-h-6 items-center self-start" to={`/projects/${project.id}/members`}>
+            Manage members
+          </Link>
+        )}
+      </div>
+    </aside>
   );
 }

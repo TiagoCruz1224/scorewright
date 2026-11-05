@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { ME, page, project, renderApp } from '../test-utils.jsx';
 
 const members = page([
@@ -55,6 +56,20 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
     screen.getByText('Reads the project and its results.');
   });
 
+  it('gives an evaluator their role card on its own, not beside an empty column (SWD2b)', async () => {
+    await renderPage('/projects/p1', { role: 'evaluator' });
+
+    const card = screen.getByRole('complementary', { name: 'Your role' });
+    within(card).getByText('Evaluator');
+    within(card).getByText('Scores and comments on the answers in evaluations.');
+    within(card).getByText('You can read the datasets, runs and rubrics. The owner imports them and manages the project.');
+    expect(within(card).queryByRole('link', { name: 'Manage members' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Next steps' })).toBeNull();
+    // A card of at most 480 px at the start of the page, as in the canvas, not the right column of .grid-main.
+    expect(card.closest('.grid-main')).toBeNull();
+    expect(card.classList.contains('max-w-[480px]')).toBe(true);
+  });
+
   it('shows an archived project read-only, even to its owner', async () => {
     await renderPage('/projects/p1/members', { role: 'owner', archivedAt: '2026-11-05T10:00:00+00:00' });
 
@@ -95,5 +110,32 @@ describe('project pages show only what the role can do (UX §1.5)', () => {
       ['Import runs', '/projects/p1/runs/new'],
       ['Create a rubric', '/projects/p1/rubrics/new'],
     ]);
+    // Beside the steps: the owner's role card, with what owners do and the way to the members.
+    const card = screen.getByRole('complementary', { name: 'Your role' });
+    expect(card.parentElement.classList.contains('grid-main')).toBe(true);
+    within(card).getByText('Owners import datasets and runs, create rubrics and evaluations, and close evaluations.');
+    within(card).getByRole('link', { name: 'Manage members' });
+  });
+});
+
+describe('the breadcrumb', () => {
+  it('lists the trail in order, with the separators left out of the names (SWD2b)', async () => {
+    await renderPage('/projects/p1/members', { role: 'owner' });
+
+    const trail = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+    expect(trail.getAllByRole('listitem').map((item) => [item.textContent, item.getAttribute('aria-current')])).toEqual([
+      ['Projects', null],
+      ['Support bot', null],
+      ['Members', 'page'],
+    ]);
+    expect(trail.getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+      ['Projects', '/projects'],
+      ['Support bot', '/projects/p1'],
+    ]);
+    // The "/" between the items is CSS generated content with empty alternative text, so it is never read:
+    // "Projects", not "/ Projects". (jsdom does not render generated content, so the rule itself is checked.)
+    const css = readFileSync('src/index.css', 'utf8'); // Vitest runs from the frontend folder
+    expect(css).toMatch(/\.crumbs li \+ li::before \{ content: "\/" \/ "";/);
+    expect(css).not.toMatch(/\.crumbs li \+ li::before \{ content: "\/";/);
   });
 });
