@@ -73,6 +73,10 @@ final class CaseFileReader
                 $errors->add($line, null, 'invalid_csv', 'A quote is not closed, or a quoted value has more text after its closing quote. Put quotes around the whole value and double every quote inside it, like "say ""hi"" twice".');
                 break;
             }
+            if (false === $values) {
+                $errors->add($line, null, 'too_long', \sprintf('A value on this line is far too long to read; the limit is %s characters. Shorten it.', number_format(self::MAX_TEXT_LENGTH)));
+                break;
+            }
             if ([''] === $values) {
                 continue; // a blank line
             }
@@ -367,9 +371,10 @@ final class CaseFileReader
 
     /**
      * RFC 4180 records keyed by line, as a spreadsheet numbers them: the header is line 1, and a quoted value over
-     * several physical lines is still one line. Yields null at a quoting error, and stops there.
+     * several physical lines is still one line. Yields null at a quoting error, or false when PCRE gives up (a quoted
+     * value of megabytes with many escaped quotes exhausts pcre.backtrack_limit), and stops there.
      *
-     * @return \Generator<int, list<string>|null>
+     * @return \Generator<int, list<string>|false|null>
      */
     private static function csvRecords(string $csv, string $delimiter): \Generator
     {
@@ -380,8 +385,9 @@ final class CaseFileReader
         $line = 1;
         $record = [];
         while (true) {
-            if (1 !== preg_match($field, $csv, $match, \PREG_UNMATCHED_AS_NULL, $offset)) {
-                yield $line => null;
+            $matched = preg_match($field, $csv, $match, \PREG_UNMATCHED_AS_NULL, $offset);
+            if (1 !== $matched) {
+                yield $line => false === $matched ? false : null;
 
                 return;
             }

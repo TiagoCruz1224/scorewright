@@ -260,7 +260,7 @@ My order is late.",,billing,
 | `invalid_type` | (JSON) a case that is not an object, or a field of the wrong type |
 | `too_many_rows` | more than 5,000 cases (reported on the first case over the limit) |
 | `required` | an empty input, or no id when other cases have one |
-| `too_long` | an id over 100 characters, or an input or reference over 20,000 |
+| `too_long` | an id over 100 characters, or an input or reference over 20,000; in CSV also a quoted value too large to read at all (`field` is then `null`) |
 | `duplicate_case_key` | an id that an earlier case already uses |
 | `too_many_tags` | more than 20 tags |
 | `tag_too_long` | a tag over 50 characters |

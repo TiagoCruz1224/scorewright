@@ -104,6 +104,21 @@ final class CaseFileReaderTest extends TestCase
         self::assertSame([[3, 'id', 'too_long'], [3, 'input', 'too_long'], [3, 'reference', 'too_long']], self::errorsOf(self::reader()->read($csv, 'csv')));
     }
 
+    public function testAQuotedValueTooLargeForTheCsvParserIsReportedAsTooLong(): void
+    {
+        // Every escaped quote is a step for PCRE, and past pcre.backtrack_limit the match fails: the file's quotes are
+        // fine, the value is just far too long. A lower limit keeps the field small here (about 3 MB with the default).
+        $default = (string) ini_get('pcre.backtrack_limit');
+        ini_set('pcre.backtrack_limit', '10000');
+        try {
+            $result = self::reader()->read("input\nshort\n\"".str_repeat('a""', 20_000)."\"\n", 'csv');
+        } finally {
+            ini_set('pcre.backtrack_limit', $default);
+        }
+
+        self::assertSame([[3, null, 'too_long']], self::errorsOf($result));
+    }
+
     public function testMetadataTooLargeAtOneByteOver10KiB(): void
     {
         // {"k":"…"} is 8 bytes around the value.
