@@ -17,13 +17,15 @@ use Symfony\Component\Security\Http\AccessMapInterface;
  * matrix checks who gets through, the feature tests check what happens next.
  *
  * Each case runs against a fresh active project with an owner, an evaluator and a viewer, plus a signed-in user who
- * is not a member, a dataset with one version, and a run of that version. {projectId} is that project and {userId}
- * its viewer; {nonMemberEmail} is the non-member's email; {datasetId}, {versionId} and {runId} are the dataset, its
- * version and the run.
+ * is not a member, a dataset with one version, a run of that version and a rubric. {projectId} is that project and
+ * {userId} its viewer; {nonMemberEmail} is the non-member's email; {datasetId}, {versionId}, {runId} and {rubricId}
+ * are the dataset, its version, the run and the rubric.
  */
 final class AuthorizationMatrixTest extends ApiTestCase
 {
     private const ACTORS = ['anonymous', 'non-member', 'viewer', 'evaluator', 'owner'];
+
+    private const CRITERIA = [['kind' => 'pass_fail', 'name' => 'Correct', 'guidance' => 'Pass when the facts are right.']];
 
     /**
      * route name => [method, path, body, expected status for each of self::ACTORS, in that order]. The body is null,
@@ -56,6 +58,12 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'run_create' => ['POST', '/api/projects/{projectId}/runs', ['datasetVersion' => '{versionId}', 'label' => 'New run', '@file' => 'run-for-a-b.csv'], [401, 404, 403, 403, 201]],
         'run_show' => ['GET', '/api/projects/{projectId}/runs/{runId}', null, [401, 404, 200, 200, 200]],
         'run_delete' => ['DELETE', '/api/projects/{projectId}/runs/{runId}', null, [401, 404, 403, 403, 204]],
+        'rubric_list' => ['GET', '/api/projects/{projectId}/rubrics', null, [401, 404, 200, 200, 200]],
+        'rubric_create' => ['POST', '/api/projects/{projectId}/rubrics', ['name' => 'New rubric', 'criteria' => self::CRITERIA], [401, 404, 403, 403, 201]],
+        'rubric_show' => ['GET', '/api/projects/{projectId}/rubrics/{rubricId}', null, [401, 404, 200, 200, 200]],
+        'rubric_update' => ['PUT', '/api/projects/{projectId}/rubrics/{rubricId}', ['name' => 'Renamed rubric', 'criteria' => self::CRITERIA], [401, 404, 403, 403, 200]],
+        'rubric_delete' => ['DELETE', '/api/projects/{projectId}/rubrics/{rubricId}', null, [401, 404, 403, 403, 204]],
+        'rubric_duplicate' => ['POST', '/api/projects/{projectId}/rubrics/{rubricId}/duplicate', ['name' => 'Copy'], [401, 404, 403, 403, 201]],
     ];
 
     /** Every route, not only those under /api: a route added elsewhere must be in the matrix too. */
@@ -137,6 +145,7 @@ final class AuthorizationMatrixTest extends ApiTestCase
         $fixture = self::createProjectWithMembers();
         $version = self::createDataset($fixture['project']);
         $run = self::createRun($version);
+        $rubric = self::createRubric($fixture['project']);
         if ('anonymous' !== $actor) {
             $user = $fixture[$actor];
             self::assertInstanceOf(User::class, $user);
@@ -150,9 +159,10 @@ final class AuthorizationMatrixTest extends ApiTestCase
             '{datasetId}' => $version->getDataset()->getId()->toRfc4122(),
             '{versionId}' => $version->getId()->toRfc4122(),
             '{runId}' => $run->getId()->toRfc4122(),
+            '{rubricId}' => $rubric->getId()->toRfc4122(),
         ];
         $uri = strtr($path, $placeholders);
-        $body = null === $body ? null : array_map(static fn (string $value): string => strtr($value, $placeholders), $body);
+        $body = null === $body ? null : array_map(static fn (mixed $value): mixed => \is_string($value) ? strtr($value, $placeholders) : $value, $body);
 
         if (isset($body['@file'])) {
             $file = $body['@file'];

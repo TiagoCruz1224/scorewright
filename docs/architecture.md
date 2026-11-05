@@ -189,7 +189,7 @@ erDiagram
         string kind "scale_1_5 | pass_fail | automatic"
         string name
         text guidance
-        decimal weight "nullable"
+        float weight "nullable, above 0 and at most 100"
         string check_type "exact_match | contains | not_contains | regex | length | valid_json"
         jsonb check_params
     }
@@ -447,7 +447,9 @@ page or a stack trace.
   length limits and valid JSON.
   - `exact_match` on a case without a reference gives `outcome = check_error`, `error_code = missing_reference` and
     `value = null`. The results count these separately; they are not failures.
-  - Regex patterns are validated when the rubric is saved (they must compile; max 500 characters).
+  - Regex patterns are validated when the rubric is saved (they must compile; max 500 characters). They are written
+    without delimiters; the server adds delimiters that no pattern can contain and the `u` flag (`i` with
+    `ignoreCase`), so the same pattern means the same at save time and at run time.
   - At run time, a PCRE error such as the backtrack limit gives `check_error` (`regex_error`), not a crash. This guards
     against catastrophic backtracking.
 - The worker runs `messenger:consume async --time-limit=3600 --memory-limit=256M` under Compose's restart policy.

@@ -9,6 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\Serializer\Exception\ExtraAttributesException;
+use Symfony\Component\Validator\Constraints\Callback;
 use Symfony\Component\Validator\ConstraintViolation;
 use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -76,10 +77,13 @@ final class ProblemDetailsListener
     {
         $constraint = $violation instanceof ConstraintViolation ? $violation->getConstraint() : null;
         $errorCode = $violation->getCode();
-        // "TOO_SHORT_ERROR" → "too_short"; type errors from the serializer have no constraint.
-        $code = null !== $constraint && null !== $errorCode
-            ? strtolower(preg_replace('/_ERROR$/', '', $constraint::getErrorName($errorCode)) ?? '')
-            : 'invalid_type';
+        // "TOO_SHORT_ERROR" → "too_short"; a Callback sets its own code (such as invalid_regex); type errors from the
+        // serializer have no constraint.
+        $code = match (true) {
+            $constraint instanceof Callback && null !== $errorCode => $errorCode,
+            null !== $constraint && null !== $errorCode => strtolower(preg_replace('/_ERROR$/', '', $constraint::getErrorName($errorCode)) ?? ''),
+            default => 'invalid_type',
+        };
 
         return ['field' => $violation->getPropertyPath(), 'code' => $code, 'message' => (string) $violation->getMessage()];
     }

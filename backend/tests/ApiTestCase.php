@@ -9,6 +9,10 @@ use App\Datasets\Entity\Dataset;
 use App\Datasets\Entity\DatasetVersion;
 use App\Datasets\Entity\Run;
 use App\Datasets\Entity\TestCase;
+use App\Evaluations\Entity\CheckType;
+use App\Evaluations\Entity\CriterionData;
+use App\Evaluations\Entity\CriterionKind;
+use App\Evaluations\Entity\Rubric;
 use App\Projects\Entity\Project;
 use App\Projects\Entity\ProjectMember;
 use App\Projects\Entity\ProjectRole;
@@ -136,6 +140,23 @@ abstract class ApiTestCase extends WebTestCase
         $entityManager->flush();
 
         return $run;
+    }
+
+    /** An unlocked rubric with a scale_1_5 criterion and a contains check, created directly in the database. */
+    protected static function createRubric(Project $project, string $name = 'Quality'): Rubric
+    {
+        $entityManager = self::getContainer()->get('doctrine.orm.entity_manager');
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+
+        $rubric = new Rubric($project, $name);
+        $rubric->replaceCriteria([
+            new CriterionData(CriterionKind::Scale1To5, 'Tone', '1: rude. 5: warm.', 2.0),
+            new CriterionData(CriterionKind::Automatic, 'Mentions a refund', checkType: CheckType::Contains, checkParams: ['text' => 'refund', 'ignoreCase' => true]),
+        ]);
+        $entityManager->persist($rubric);
+        $entityManager->flush();
+
+        return $rubric;
     }
 
     protected static function fixturePath(string $name): string

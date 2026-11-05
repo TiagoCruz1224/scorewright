@@ -135,20 +135,21 @@ export function ProjectLayout() {
 
 /** How far the project is along the "Next steps" (UX §3.1): for now, whether it has a dataset and a run. */
 export async function overviewLoader({ params, request }) {
-  const [datasets, runs] = await Promise.all(
-    ['datasets', 'runs'].map((list) => api(`/api/projects/${params.projectId}/${list}?perPage=1`, { request })),
+  const [datasets, runs, rubrics] = await Promise.all(
+    ['datasets', 'runs', 'rubrics'].map((list) => api(`/api/projects/${params.projectId}/${list}?perPage=1`, { request })),
   );
 
-  return { hasDataset: datasets.total > 0, hasRun: runs.total > 0 };
+  return { hasDataset: datasets.total > 0, hasRun: runs.total > 0, hasRubric: rubrics.total > 0 };
 }
 
 export function Overview() {
   const project = useRouteLoaderData('project');
-  const { hasDataset, hasRun } = useLoaderData();
+  const { hasDataset, hasRun, hasRubric } = useLoaderData();
   const role = ROLES[project.role];
   const steps = [
     { label: 'Import a dataset', done: hasDataset, to: 'datasets/new' },
     { label: 'Import runs', done: hasRun, to: 'runs/new' },
+    { label: 'Create a rubric', done: hasRubric, to: 'rubrics/new' },
   ];
   usePageTitle('Overview', project.name);
 
@@ -161,7 +162,7 @@ export function Overview() {
       {project.role === 'owner' && (
         <section aria-labelledby="next-steps-heading" className="mt-8">
           <h2 id="next-steps-heading">Next steps</h2>
-          {/* The later steps (rubric, evaluation) join this list with their screens. */}
+          {/* The last step (evaluation) joins this list with its screens. */}
           <ol className="list-decimal pl-6">
             {steps.map((step) => (
               <li key={step.label}>

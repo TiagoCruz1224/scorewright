@@ -160,6 +160,7 @@ final class RunTest extends ApiTestCase
             '{versionId}' => $version->getId()->toRfc4122(),
             '{runId}' => $run->getId()->toRfc4122(),
             '{userId}' => $fixture['viewer']->getId()->toRfc4122(),
+            '{rubricId}' => self::createRubric($fixture['project'])->getId()->toRfc4122(),
         ];
 
         $checked = 0;
@@ -175,7 +176,7 @@ final class RunTest extends ApiTestCase
             self::assertStringNotContainsString('"output"', (string) $response->getContent(), $name);
             ++$checked;
         }
-        self::assertGreaterThanOrEqual(11, $checked, 'Every GET route was checked');
+        self::assertGreaterThanOrEqual(13, $checked, 'Every GET route was checked');
     }
 
     public function testDeletingARunRemovesItsAnswersAndDeletingTheDatasetRemovesItsRuns(): void

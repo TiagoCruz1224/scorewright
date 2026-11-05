@@ -15,6 +15,7 @@ import {
 } from './routes/datasets.jsx';
 import { ImportFormat } from './routes/importFormat.jsx';
 import { Members, membersAction, membersLoader } from './routes/members.jsx';
+import { EditRubric, editRubricAction, editRubricLoader, NewRubric, newRubricAction, Rubric, rubricAction, rubricLoader, Rubrics, rubricsLoader } from './routes/rubrics.jsx';
 import { ImportRun, importRunAction, importRunLoader, Run, runAction, runLoader, Runs, runsLoader } from './routes/runs.jsx';
 import { NewProject, newProjectAction, Overview, overviewLoader, ProjectLayout, projectLoader, Projects, projectsLoader } from './routes/projects.jsx';
 import { Settings, settingsAction } from './routes/settings.jsx';
@@ -56,6 +57,10 @@ export const routes = [
               { path: 'runs', loader: runsLoader, Component: Runs },
               { path: 'runs/new', loader: importRunLoader, action: importRunAction, Component: ImportRun },
               { path: 'runs/:runId', loader: runLoader, action: runAction, Component: Run },
+              { path: 'rubrics', loader: rubricsLoader, Component: Rubrics },
+              { path: 'rubrics/new', action: newRubricAction, Component: NewRubric },
+              { path: 'rubrics/:rubricId', loader: rubricLoader, action: rubricAction, Component: Rubric },
+              { path: 'rubrics/:rubricId/edit', loader: editRubricLoader, action: editRubricAction, Component: EditRubric },
               { path: 'members', loader: membersLoader, action: membersAction, Component: Members },
               { path: 'settings', action: settingsAction, Component: Settings },
             ],

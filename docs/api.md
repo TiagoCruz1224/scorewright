@@ -24,7 +24,7 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 - **Caching:** every response has `Cache-Control: no-store`.
 - **Projects:** every project resource lives under `/api/projects/{projectId}`. If you are not a member of that
   project, or it does not exist, the answer is `404 not_found` (the same for both), before any other check. A
-  dataset or version of another project is also a `404`, the same as one that does not exist.
+  dataset, version, run or rubric of another project is also a `404`, the same as one that does not exist.
 - **Uploads** (dataset imports) are `multipart/form-data` with the file in a field named `file`; anything else answers
   `415`.
 - **Errors** are `application/problem+json` ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)) with a stable `code`:
@@ -48,10 +48,10 @@ the endpoints that exist. Every route is also listed in the authorization matrix
 | 403 | `forbidden` (a member without the needed role), `csrf_failed` |
 | 404 | `not_found` (also: a project you are not a member of, and any path that does not exist, `/api` included) |
 | 405 | `method_not_allowed` |
-| 409 | `project_archived` (any write to an archived project except restore), `last_owner` |
+| 409 | `project_archived` (any write to an archived project except restore), `last_owner`, `rubric_locked` (an edit of a rubric that an evaluation uses) |
 | 413 | `payload_too_large` (body over 6 MiB, or an import file over 5 MiB) |
 | 415 | `unsupported_media_type` (a body that is not `application/json`, or none where one is needed; for uploads, not `multipart/form-data`) |
-| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken`, `label_taken`, `not_found` (a dataset version that is not the project's) or `required` (a missing upload) |
+| 422 | `validation_failed`, with `errors[]`; each error has a `field` path and a `code` such as `is_blank`, `too_short`, `too_long`, `invalid_format`, `invalid_type`, `no_such_choice`, `not_in_range`, `control_character`, `unknown_field`, `email_taken`, `no_account`, `already_member`, `name_taken`, `label_taken`, `not_found` (a dataset version that is not the project's), `required` (a missing upload), and for rubrics `too_few`, `too_many`, `not_allowed`, `invalid_regex` and `max_below_min` |
 | 422 | `import_rejected`: the dataset file has errors and nothing was saved (see [Import errors](#import-errors)) |
 | 429 | `too_many_login_attempts`, `too_many_registrations`, `too_many_invites`, `too_many_projects`; with `Retry-After` |
 | 500 | `internal_error` (details are only in the server log) |
@@ -331,3 +331,76 @@ Your refund is on its way."
   { "id": "refund-1", "output": "" }
 ]
 ```
+
+## Rubrics
+
+A rubric is an ordered list of criteria that answers are scored on. Members read rubrics; owners create, edit,
+duplicate and delete them. Once an evaluation uses a rubric it is **locked** (`lockedAt` is set, by the evaluation
+that first uses it): it never changes again, so existing scores keep their meaning, but it can be duplicated.
+
+A rubric:
+
+```json
+{
+  "id": "01a1ac2e-…",
+  "name": "Support quality",
+  "criterionCount": 4,
+  "lockedAt": null,
+  "duplicatedFrom": null,
+  "criteria": [
+    { "id": "01a1ac2e-…", "kind": "scale_1_5", "name": "Tone", "guidance": "1: rude or cold.\n5: warm and clear.", "weight": 2, "checkType": null, "checkParams": null },
+    { "id": "01a1ac2e-…", "kind": "pass_fail", "name": "Correct", "guidance": "Pass when every fact is right.", "weight": null, "checkType": null, "checkParams": null },
+    { "id": "01a1ac2e-…", "kind": "automatic", "name": "Starts with Refund", "guidance": "", "weight": null, "checkType": "regex", "checkParams": { "pattern": "^Refund", "ignoreCase": false } },
+    { "id": "01a1ac2e-…", "kind": "automatic", "name": "Mentions the order", "guidance": "", "weight": null, "checkType": "contains", "checkParams": { "text": "order", "ignoreCase": true } }
+  ]
+}
+```
+
+- `duplicatedFrom` is `{"id", "name"}` of the rubric this one was copied from, or `null` (also when that one was
+  deleted). In a list, each rubric has only `id`, `name`, `criterionCount` and `lockedAt`.
+- The order of `criteria` is the rubric's order. A weight left empty (`null`) counts as 1 in the results; a whole
+  weight comes back as a JSON integer (`2`, not `2.0`).
+
+| Endpoint | Who | Answer |
+|---|---|---|
+| `GET P/rubrics` | member | `200`, a list of rubrics ordered by name. |
+| `POST P/rubrics` | owner | `201` with the rubric. Body `{"name", "criteria"}`, below. |
+| `GET P/rubrics/{rubricId}` | member | `200` with the rubric. |
+| `PUT P/rubrics/{rubricId}` | owner | `200` with the rubric. The same body as `POST`, which **replaces** the name and every criterion (new criterion ids, in the new order). A locked rubric answers `409 rubric_locked`; a body that is not valid answers `422` first. |
+| `DELETE P/rubrics/{rubricId}` | owner | `204`; its criteria go too, and its copies stay. |
+| `POST P/rubrics/{rubricId}/duplicate` | owner | `201` with the copy: the same criteria, not locked, with `duplicatedFrom` set. Optional body `{"name": "…"}`; without it the name is "<name> (copy)" (shortened to fit 200 characters). Works on a locked rubric too. |
+
+### Rubric body
+
+- `name`: 1 to 200 characters on one line, unique in the project (`422 name_taken`).
+- `criteria`: an array of 1 to 30 criteria (`too_few`, `too_many`), in order. Each error's `field` is the path of the
+  field, such as `criteria[2].checkParams.pattern`.
+
+Each criterion:
+
+| Field | | Limit |
+|---|---|---|
+| `kind` | required: `scale_1_5` or `pass_fail` (manual, scored by people) or `automatic` (a check) | |
+| `name` | required | 200 characters on one line |
+| `guidance` | required for `scale_1_5` and `pass_fail`: how to score; optional for `automatic` | 5,000 characters; line breaks and tabs are fine |
+| `weight` | optional number | above 0 and at most 100 |
+| `checkType` | required for `automatic`, not allowed otherwise (`not_allowed`) | below |
+| `checkParams` | an object for `automatic` (may be left out when the check needs none), not allowed otherwise | below |
+
+The checks of automatic criteria. Each gives pass or fail; they run in the background when an evaluation starts.
+Parameters that are not listed answer `unknown_field`, and `ignoreCase` is `false` when left out.
+
+| `checkType` | `checkParams` | Passes when the answer… |
+|---|---|---|
+| `exact_match` | `{"ignoreCase"?: bool}` | equals the case's reference, both without spaces at the ends. A case without a reference gets a check error (`missing_reference`), not a fail. |
+| `contains` | `{"text": "…", "ignoreCase"?: bool}`, text 1 to 500 characters on one line | contains the text |
+| `not_contains` | the same | does not contain the text |
+| `regex` | `{"pattern": "…", "ignoreCase"?: bool}`, pattern 1 to 500 characters on one line | matches the pattern |
+| `length` | `{"min"?: int, "max"?: int}`, at least one, each 0 to 50,000, `min` ≤ `max` (`max_below_min`) | has from `min` to `max` characters |
+| `valid_json` | none | is valid JSON as a whole |
+
+**Regex patterns** are PCRE, written **without delimiters or flags**: `^Refund \d+`, not `/^Refund \d+/i`. The server
+puts the pattern between delimiters that no pattern can contain, so a `/` needs no escaping, and always adds the `u`
+flag (the pattern and the answer are read as UTF-8), plus `i` when `ignoreCase` is true. The pattern must compile when
+the rubric is saved: otherwise `invalid_regex`, with PCRE's reason in the message, such as "This pattern does not
+compile: missing closing parenthesis at offset 7."
