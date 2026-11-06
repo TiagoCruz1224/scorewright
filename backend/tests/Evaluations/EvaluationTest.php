@@ -14,6 +14,8 @@ use App\Evaluations\Entity\CriterionData;
 use App\Evaluations\Entity\CriterionKind;
 use App\Evaluations\Entity\Evaluation;
 use App\Evaluations\Entity\Rubric;
+use App\Evaluations\Repository\EvaluationItemRepository;
+use App\Evaluations\Repository\ScoreRepository;
 use App\Projects\Entity\Project;
 use App\Tests\ApiTestCase;
 use App\Users\Entity\User;
@@ -101,6 +103,8 @@ final class EvaluationTest extends ApiTestCase
         $errors = static fn (array $fields): array => self::errorFieldsAndCodes(self::create($client, $path, $version, [$run], $rubric, $fields));
 
         self::assertSame([['field' => 'runs', 'code' => 'too_few']], $errors(['runs' => []]));
+        // A JSON object is not a list of runs (SWQ3-07), even with run ids as its values.
+        self::assertSame([['field' => 'runs', 'code' => 'invalid_type']], $errors(['runs' => ['a' => $run->getId()->toRfc4122()]]));
         self::assertSame([['field' => 'runs', 'code' => 'too_many']], $errors(['runs' => array_map(static fn (): string => Uuid::v4()->toRfc4122(), range(1, 6))]));
         self::assertSame([['field' => 'runs[1]', 'code' => 'other_dataset_version']], $errors(['runs' => [$run->getId()->toRfc4122(), $otherVersionRun->getId()->toRfc4122()]]));
         self::assertSame([['field' => 'runs[1]', 'code' => 'duplicate_run']], $errors(['runs' => [$run->getId()->toRfc4122(), $run->getId()->toRfc4122()]]));
@@ -370,6 +374,37 @@ final class EvaluationTest extends ApiTestCase
         self::assertProblem(self::requestJson($client, 'PUT', "$base/items/$item/scores/".$rubric->getCriteria()[0]->getId(), ['value' => 3]), 409, 'evaluation_closed');
         self::assertProblem(self::requestJson($client, 'PUT', "$base/items/$item/comment", ['comment' => 'Late']), 409, 'evaluation_closed');
         self::assertSame('closed', self::json(self::requestJson($client, 'GET', $base))['status']);
+    }
+
+    /**
+     * SWQ3-02: the owner's close commits while a score or a comment is on its way. The request read the evaluation as
+     * open; the write locks the evaluation (FOR SHARE) and reads it again, so it writes nothing once it is closed. The
+     * close is made here behind the loaded entities, which is what a concurrent close does to the request.
+     */
+    public function testAScoreOrCommentOnItsWayWhenTheEvaluationClosesIsNotWritten(): void
+    {
+        [, $fixture] = self::signedInOwner();
+        $version = self::versionWithCases($fixture['project'], 1);
+        $rubric = self::rubric($fixture['project'], 'Quality', CriterionKind::Scale1To5);
+        $evaluation = self::createEvaluation($rubric, [self::runOf($version, 'baseline')]);
+        $item = self::firstItem($evaluation);
+        $criterion = $rubric->getCriteria()[0];
+        $scores = self::getContainer()->get(ScoreRepository::class);
+        $items = self::getContainer()->get(EvaluationItemRepository::class);
+        self::assertInstanceOf(ScoreRepository::class, $scores);
+        self::assertInstanceOf(EvaluationItemRepository::class, $items);
+        self::assertTrue($scores->saveManual($item, $criterion, 1, $fixture['owner']));
+        self::assertTrue($items->saveComment($item, 'Before the close', $fixture['owner']));
+
+        self::connection()->executeStatement("UPDATE evaluation SET status = 'closed', closed_at = NOW() WHERE id = ?", [$evaluation->getId()->toRfc4122()]);
+
+        self::assertFalse($evaluation->isClosed(), 'The request still has it open');
+        self::assertFalse($scores->saveManual($item, $criterion, 5, $fixture['owner']));
+        self::assertFalse($items->saveComment($item, 'After the close', $fixture['owner']));
+        self::assertSame(
+            ['value' => 1, 'comment' => 'Before the close'],
+            self::connection()->fetchAssociative('SELECT s.value, i.comment FROM score s JOIN evaluation_item i ON i.id = s.evaluation_item_id WHERE i.id = ?', [$item->getId()->toRfc4122()]),
+        );
     }
 
     /** Architecture §4, "Deleting": not while an evaluation uses them, and fine once it is deleted. */

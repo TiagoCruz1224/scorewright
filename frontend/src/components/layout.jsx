@@ -274,12 +274,17 @@ export function Loading() {
 /** What went wrong while loading a page: a missing project, a page for owners only, or anything else. */
 export function ErrorPage() {
   const error = useRouteError();
+  const { pathname } = useLocation();
   const status = error instanceof ApiError ? error.problem.status : isRouteErrorResponse(error) ? error.status : 500;
+  // A 403 comes from a page for owners only, or from Scoring, which evaluators open too (SWQ3-10).
+  const forbidden = /\/score(\/|$)/.test(pathname)
+    ? 'Only the owners and evaluators of this project score answers. If you should, ask an owner to change your role.'
+    : 'Your role in this project does not open it: only its owners do. If you need it, ask one of them.';
   const [title, text] =
     status === 404
       ? ['Not found', 'This page does not exist, or it belongs to a project you are not a member of.']
       : status === 403
-        ? ['You cannot open this page', 'Only the owners of this project can open it.']
+        ? ['You cannot open this page', forbidden]
         : ['Something went wrong', 'Reload the page in a moment. If it keeps happening, the server log says why.'];
   usePageTitle(title);
 

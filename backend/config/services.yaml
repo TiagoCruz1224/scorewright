@@ -27,9 +27,13 @@ services:
     # please note that last definitions always *replace* previous ones
 
     # Session storage in PostgreSQL (ADR 0002); the table comes from a migration.
+    # No lock: the default (a transaction with SELECT … FOR UPDATE) ran the requests of one session one at a time, and
+    # the UI sends several at once (loaders, polling, autosave). The session holds only who is signed in, written at
+    # login and logout; PHP's lazy write leaves it alone otherwise, so there is nothing two requests could overwrite.
     Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler:
         arguments:
             - '%env(DATABASE_URL)%'
+            - { lock_mode: !php/const Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler::LOCK_NONE }
 
 when@test:
     services:

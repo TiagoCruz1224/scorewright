@@ -31,6 +31,10 @@ services:
   worker:
     <<: *backend
     command: ["php", "bin/console", "messenger:consume", "async", "--time-limit=3600", "--memory-limit=256M"]
+    # Two consumers: a slow job (one whose regex patterns take seconds) does not hold up everyone else's (SWQ3-01).
+    # The transport hands each message to one of them, and the handler locks the job, so a job never runs twice.
+    deploy:
+      replicas: 2
     # The image's health check probes Caddy, which the worker does not run.
     healthcheck:
       disable: true

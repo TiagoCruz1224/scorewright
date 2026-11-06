@@ -7,8 +7,10 @@ namespace App\Evaluations\Repository;
 use App\Datasets\Entity\Run;
 use App\Evaluations\Entity\Evaluation;
 use App\Evaluations\Entity\EvaluationItem;
+use App\Users\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\ArrayParameterType;
+use Doctrine\DBAL\Connection;
 use Doctrine\Persistence\ManagerRegistry;
 use Random\Randomizer;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -27,6 +29,25 @@ final class EvaluationItemRepository extends ServiceEntityRepository
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, EvaluationItem::class);
+    }
+
+    /**
+     * Saves the answer's comment (an empty one clears it), only while the evaluation is open: the same lock as a score
+     * (ScoreRepository::lockOpen, SWQ3-02). Returns false, changing nothing, once it is closed.
+     */
+    public function saveComment(EvaluationItem $item, string $comment, User $by): bool
+    {
+        $entityManager = $this->getEntityManager();
+
+        return $entityManager->getConnection()->transactional(static function (Connection $connection) use ($entityManager, $item, $comment, $by): bool {
+            if (!ScoreRepository::lockOpen($connection, $item)) {
+                return false;
+            }
+            $item->comment($comment, $by);
+            $entityManager->flush();
+
+            return true;
+        });
     }
 
     /**

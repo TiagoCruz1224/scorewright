@@ -90,8 +90,10 @@ test('a new user goes from registering to the comparison and the CSV, through th
     await page.getByRole('link', { name: 'Start scoring' }).first().click();
     const scorebar = page.locator('.scorebar');
     for (let scored = 1; scored <= 8; scored++) {
-      // The focus goes to the case on every answer; the run is hidden.
+      // The focus goes to the case on every answer; the run is hidden. No score is chosen yet: the new answer is shown,
+      // not the one just scored.
       await expect(page.locator('.case-title')).toBeFocused();
+      await expect(page.locator('.scale input:checked')).toHaveCount(0);
       if (scored === 1) {
         await expectNoAxeViolations(page, 'Scoring');
       }

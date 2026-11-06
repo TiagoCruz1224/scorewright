@@ -22,6 +22,22 @@ afterEach(() => {
 });
 
 describe('new evaluation', () => {
+  it('says, under blind mode, that a partial run gives away its answers to the cases only it answered (SWQ3-04)', async () => {
+    const answers = newEvaluationAnswers(() => Response.json({}));
+    answers['/api/projects/p1/runs?perPage=100'] = page([run('run1', 'baseline-v1', '2026-11-05T10:00:00+00:00'), run('run2', 'tuned-v2', '2026-11-05T11:00:00+00:00', { answerCount: 2 })]);
+    await renderApp('/projects/p1/evaluations/new', answers);
+    const [baseline, tuned] = within(screen.getByRole('group', { name: 'Runs' })).getAllByRole('checkbox');
+    const blind = screen.getByRole('checkbox', { name: /Blind mode/ });
+
+    // On its own, a partial run has nothing to be told apart from.
+    fireEvent.click(tuned);
+    expect(document.getElementById('blind-partial')).toBeNull();
+    fireEvent.click(baseline);
+
+    expect(document.getElementById('blind-partial').textContent).toBe('tuned-v2 does not answer every case. In blind mode, a case that only one of the runs answered still shows which run wrote that answer.');
+    expect(blind.getAttribute('aria-describedby')).toBe('blind-hint blind-partial');
+  });
+
   it('gives the runs their letters in import order, sums up, and shows each API error next to its field, runs[N] included', async () => {
     let sent;
     const { fetch } = await renderApp(
@@ -89,6 +105,8 @@ describe('the evaluation page', () => {
     const checks = () => document.querySelector('.stat[role="status"]').textContent;
     expect(checks()).toContain('running');
     expect(reads).toBe(1);
+    // One region by that name, not the section and its table both (SWQ3-06).
+    expect(screen.getAllByRole('region', { name: 'Progress by criterion' })).toHaveLength(1);
 
     await act(() => vi.advanceTimersByTimeAsync(POLL_MS));
     await waitFor(() => expect(checks()).toContain('done'));

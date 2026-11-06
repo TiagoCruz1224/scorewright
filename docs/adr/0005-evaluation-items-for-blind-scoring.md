@@ -27,3 +27,6 @@ Answer ids would not reveal the run on their own, but a predictable order or an 
 - "Next" and progress are simple indexed queries on (`evaluation_id`, `position`).
 - About 25,000 extra rows per evaluation at the MVP limits, which is negligible.
 - Results join items back to runs, which only result endpoints do, and those check the blind rules for evaluators.
+- **Partial runs weaken blind mode.** A case that only one run of the evaluation answered has a single item, and so
+  its run is known (the run list shows each run's coverage). Shuffling cannot hide it. The New evaluation form and
+  `docs/api.md` say so; comparing runs that answer the same cases avoids it.

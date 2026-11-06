@@ -528,7 +528,7 @@ function ManualCriterion({ criterion, value, onScore }) {
   );
 }
 
-const CHECK_ERRORS = { missing_reference: 'Error: no reference', regex_error: 'Error: the pattern failed' };
+const CHECK_ERRORS = { missing_reference: 'Error: no reference', regex_error: 'Error: the pattern failed', check_time_budget: 'Error: out of time' };
 
 /** An automatic check, read only, in words and with an icon: ✓ Pass, ✗ Fail, Pending, or why it could not run. */
 export function CheckState({ score }) {

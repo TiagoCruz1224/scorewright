@@ -20,6 +20,7 @@ use App\Projects\Entity\Project;
 use App\Tests\ApiTestCase;
 use App\Users\Entity\User;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Component\Console\Command\Command;
@@ -133,6 +134,64 @@ final class CheckJobTest extends ApiTestCase
 
         self::assertSame(['succeeded', 3, 3, null], self::job($jobId));
         self::assertCount(6, self::automaticScores($evaluationId));
+    }
+
+    /**
+     * SWQ3-01: past the job's time budget, the items left get check_time_budget without running, and the job still
+     * succeeds. A budget of 0 s is used up before the first item.
+     */
+    public function testAJobPastItsTimeBudgetLeavesTheRestAsCheckErrors(): void
+    {
+        [$evaluationId, $jobId] = self::evaluationWithJob();
+
+        (new RunAutomaticChecksHandler(self::connection(), self::service(ScoreRepository::class), jobBudget: 0.0))(new RunAutomaticChecks($jobId));
+
+        self::assertSame(['succeeded', 3, 3, null], self::job($jobId));
+        self::assertSame(array_fill(0, 6, [null, 'check_error', 'check_time_budget']), array_map(static fn (array $score): array => \array_slice($score, 3), self::automaticScores($evaluationId)));
+    }
+
+    /**
+     * A criterion past its own budget stops alone: with 0 s, each criterion runs on the first item, which uses up its
+     * time, and the items after get check_time_budget.
+     */
+    public function testACriterionPastItsTimeBudgetStopsForTheItemsLeft(): void
+    {
+        [$evaluationId, $jobId] = self::evaluationWithJob();
+
+        (new RunAutomaticChecksHandler(self::connection(), self::service(ScoreRepository::class), criterionBudget: 0.0))(new RunAutomaticChecks($jobId));
+
+        $outOfTime = [null, 'check_error', 'check_time_budget'];
+        self::assertSame([
+            ['c1', 'Same city', 1, 'scored', null], ['c1', 'Mentions a refund', 0, 'scored', null],
+            ['c2', 'Same city', ...$outOfTime], ['c2', 'Mentions a refund', ...$outOfTime],
+            ['c3', 'Same city', ...$outOfTime], ['c3', 'Mentions a refund', ...$outOfTime],
+        ], array_map(static fn (array $score): array => \array_slice($score, 1), self::automaticScores($evaluationId)));
+        self::assertSame(['succeeded', 3, 3, null], self::job($jobId));
+    }
+
+    /**
+     * Two workers never run one job at once: while another database session holds the job's advisory lock (a worker
+     * still running it, when the message is delivered again), the handler leaves the job alone.
+     */
+    public function testAJobAnotherWorkerIsRunningIsLeftToIt(): void
+    {
+        [$evaluationId, $jobId] = self::evaluationWithJob();
+        // Another session: not the tests' connection, which keeps every test in one transaction.
+        $otherWorker = DriverManager::getConnection(self::connection()->getParams());
+        self::assertTrue($otherWorker->fetchOne('SELECT pg_try_advisory_lock(hashtext(?))', ["check_job:$jobId"]));
+
+        try {
+            self::handle($jobId);
+
+            self::assertSame(['queued', 0, 3, null], self::job($jobId));
+            self::assertSame([], self::automaticScores($evaluationId));
+        } finally {
+            $otherWorker->close();
+        }
+
+        // Once that worker is gone (its session and lock with it), the job runs.
+        self::handle($jobId);
+        self::assertSame(['succeeded', 3, 3, null], self::job($jobId));
     }
 
     public function testAnExceptionGoesBackToMessengerWithTheJobStillActive(): void

@@ -11,6 +11,9 @@ framework:
                     # A message whose worker stopped half-way (a container restart) is delivered again after this many
                     # seconds, instead of the default hour. A full check job at the MVP limits takes far less.
                     redeliver_timeout: 300
+                    # With LISTEN/NOTIFY, a delayed message (a retry, 1, 2 then 4 s later) is only looked for this often:
+                    # the default, 60 s, made each retry wait about a minute (SWQ3-03).
+                    check_delayed_interval: 1000
             failed: 'doctrine://default?queue_name=failed&auto_setup=0'
 
         routing:

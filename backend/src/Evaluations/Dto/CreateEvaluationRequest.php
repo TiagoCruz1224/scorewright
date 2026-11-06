@@ -28,6 +28,8 @@ final readonly class CreateEvaluationRequest
         #[Assert\NotBlank(message: 'Choose the dataset version.')]
         public string $datasetVersion = '',
 
+        // A JSON array: an object such as {"a": "<id>"} decodes to a PHP array too, so this tells them apart (SWQ3-07).
+        #[Assert\Type('list', message: 'Send the runs as a list of run ids.')]
         #[Assert\Count(min: 1, max: self::MAX_RUNS, minMessage: 'Choose at least one run.', maxMessage: 'An evaluation has at most 5 runs. Remove some.')]
         public array $runs = [],
 

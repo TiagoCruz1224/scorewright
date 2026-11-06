@@ -89,7 +89,10 @@ final class ScoringController
             throw ApiProblem::validation([['field' => 'value', 'code' => 'not_in_range', 'message' => $message]]);
         }
 
-        $this->scores->saveManual($item, $criterion, (int) $body->value, $projectAccess->user);
+        // Checked again as it is written, under a lock: closing may have come in since (SWQ3-02).
+        if (!$this->scores->saveManual($item, $criterion, (int) $body->value, $projectAccess->user)) {
+            throw EvaluationController::closed();
+        }
 
         return new JsonResponse($this->itemJson($item));
     }
@@ -100,8 +103,9 @@ final class ScoringController
     public function comment(ProjectAccess $projectAccess, string $evaluationId, string $itemId, #[MapRequestPayload(acceptFormat: 'json')] CommentRequest $body): JsonResponse
     {
         $item = $this->findItem($this->openEvaluation($projectAccess, $evaluationId), $itemId);
-        $item->comment((string) $body->comment, $projectAccess->user);
-        $this->entityManager->flush();
+        if (!$this->items->saveComment($item, (string) $body->comment, $projectAccess->user)) {
+            throw EvaluationController::closed();
+        }
 
         return new JsonResponse($this->itemJson($item));
     }

@@ -94,6 +94,11 @@ data each time, and only runs in the `dev` and `test` environments.
 
 Each run adds another project; archive it in its Settings page to hide it from the list.
 
+**The times in the docs are from a production build:** results under 500 ms at these limits, as measured in
+[architecture §7](docs/architecture.md#7-background-jobs-and-automatic-checks). This development stack runs Symfony in
+debug mode (`APP_ENV=dev`) with the code on a bind mount, so it is several times slower: on Windows, about 2 s for the
+same results.
+
 ## Checks
 
 ```bash

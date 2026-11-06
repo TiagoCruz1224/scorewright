@@ -454,9 +454,16 @@ page or a stack trace.
   - **Closing waits for the checks:** `POST …/close` answers `409 check_job_running` while the latest job is queued
     or running (a failed one does not stop it), so the scores of a closed evaluation never change. Close and re-run
     lock the evaluation row (`FOR UPDATE`), so neither slips past the other.
-- The handler (`RunAutomaticChecksHandler`) processes items in batches of 500 and upserts automatic scores, so a retry
-  or re-run is idempotent. Each batch commits its scores with `processed/total`, which the evaluation page polls every
-  5 s at most.
+- The handler (`RunAutomaticChecksHandler`) reads the items in batches of 500 and upserts automatic scores, so a retry
+  or re-run is idempotent. At least every second it commits the scores so far with `processed/total`, which the
+  evaluation page polls every 5 s at most.
+  - **One worker per job:** the handler takes a session advisory lock on the job (`pg_try_advisory_lock`). A message
+    delivered again while another worker still runs the job finds the lock taken and leaves the job to that worker.
+    A worker that dies loses its database connection, and the lock with it.
+  - **A time budget** (SWQ3-01): a job spends at most 120 s checking, and one criterion at most 30 s. Past that, the
+    items left get `check_error` with `error_code = check_time_budget` for that criterion (or for all of them, past
+    the job's), without running, and the job still ends `succeeded`. A job at the MVP limits takes about 10 s, and
+    120 s stays far below the 5 minutes of `redeliver_timeout`.
   - It skips a message whose job is gone (its evaluation was deleted), already `succeeded`, no longer the latest, or
     of a closed evaluation (a failed job retried from the failed transport).
   - An exception goes back to Messenger, which retries the message 3 times. `MarkFailedCheckJobs`, a
@@ -465,9 +472,8 @@ page or a stack trace.
     job from the start.
   - A worker stopped half-way (a container restart) leaves its message unacknowledged: the Doctrine transport
     delivers it again after `redeliver_timeout`, 5 minutes here instead of the default hour, and the job runs again.
-    Messages that were only queued wait in the table. A redelivery would be harmless even while the first worker were
-    still running it: a whole job takes about 10 s at the MVP limits, far below the 5 minutes, and every score is an
-    upsert, so two runs of a job give the same rows.
+    Messages that were only queued wait in the table. A redelivery while the first worker still runs it is skipped
+    (the advisory lock), and the time budget keeps a job far below the 5 minutes anyway.
 - The checks are pure functions over (answer, reference, params), in `App\Evaluations\Checks\Checks`: exact match,
   contains, does not contain, regex, length limits and valid JSON.
   - `exact_match` on a case without a reference gives `outcome = check_error`, `error_code = missing_reference` and
@@ -475,10 +481,20 @@ page or a stack trace.
   - Regex patterns are validated when the rubric is saved (they must compile; max 500 characters). They are written
     without delimiters; the server adds delimiters that no pattern can contain and the `u` flag (`i` with
     `ignoreCase`), so the same pattern means the same at save time and at run time.
-  - At run time, a PCRE error such as the backtrack limit gives `check_error` (`regex_error`), not a crash. This guards
-    against catastrophic backtracking: `(a+)+$` on 30,000 characters stops in a few milliseconds. So PCRE's verbs
-    (`(*SKIP)`, `(*FAIL)`…) stay allowed: the limit is the guard, not a list of forbidden syntax.
-- The worker runs `messenger:consume async --time-limit=3600 --memory-limit=256M` under Compose's restart policy.
+  - At run time, a PCRE error such as the backtrack limit gives `check_error` (`regex_error`), not a crash. That stops
+    catastrophic (exponential) backtracking: `(a+)+$` on 30,000 characters stops in a few milliseconds.
+  - **It does not stop quadratic patterns** (SWQ3-01): `s+$`, `(a++)+$` or `(?=(a+))+$` run to the end, up to about
+    1 s on an answer of 50,000 characters (the longest a run may have), with or without the JIT. The time budget
+    above is the guard against those, not a list of forbidden syntax, so PCRE's verbs (`(*SKIP)`, `(*FAIL)`…) stay
+    allowed.
+- **Two workers** (`deploy.replicas: 2` in Compose) run `messenger:consume async --time-limit=3600 --memory-limit=256M`
+  under Compose's restart policy, so one slow job does not hold up everyone else's. The Doctrine transport gives each
+  message to one of them (`FOR UPDATE SKIP LOCKED`), and the advisory lock keeps a job to one worker. A delayed
+  message (a retry) is looked for every second (`check_delayed_interval`), so the tries come 1, 2 and 4 s apart.
+- **A score or a comment is written only while the evaluation is open** (SWQ3-02): in the write's transaction, the
+  evaluation's row is locked `FOR SHARE`, the counterpart of the close's `FOR UPDATE`. A close that started first
+  makes the save wait and then answer `409 evaluation_closed`; one that comes later waits for the save to commit. So
+  nothing changes the results of a closed evaluation.
 
 **Results** are computed on read with SQL aggregates over `score`
 ([ADR 0007](adr/0007-results-computed-on-read.md)): averages and distributions per criterion and run, a breakdown by

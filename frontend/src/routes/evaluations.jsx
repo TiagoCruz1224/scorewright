@@ -260,6 +260,7 @@ export function NewEvaluation() {
   const letterOf = (run) => 'ABCDE'[picked.indexOf(run)];
   const rubric = rubrics.find((item) => item.id === rubricId);
   const version = versions.find((item) => item.id === versionId);
+  const partial = picked.length > 1 && version ? picked.filter((run) => run.answerCount < version.caseCount) : [];
   const problem = result?.problem;
   // runs[N] errors name the Nth run submitted: shown next to that run, by its label.
   const runErrors = (problem?.errors ?? []).filter((error) => /^runs(\[\d+\])?$/.test(error.field));
@@ -397,13 +398,22 @@ export function NewEvaluation() {
                 ))}
               </Field>
               <label className="switch-row">
-                <input type="checkbox" name="blind" defaultChecked aria-describedby="blind-hint" />
+                <input type="checkbox" name="blind" defaultChecked aria-describedby={partial.length > 0 ? 'blind-hint blind-partial' : 'blind-hint'} />
                 <span>
                   <b style={{ fontWeight: 600 }}>Blind mode</b>
                   <br />
                   <span className="small muted" id="blind-hint">
                     Evaluators do not see which run wrote an answer, and the answers of each case come in a random order. It reduces bias. Evaluators cannot turn it off, and they see the results only after you close the evaluation.
                   </span>
+                  {/* A case that only one chosen run answered has one answer: whose it is can be worked out (SWQ3-04). */}
+                  {partial.length > 0 && (
+                    <span className="mt-1.5 flex items-start gap-1.5 text-[13px]" id="blind-partial">
+                      <Icon name="alert" />
+                      <span>
+                        <bdi>{partial.map((run) => run.label).join(', ')}</bdi> {partial.length === 1 ? 'does' : 'do'} not answer every case. In blind mode, a case that only one of the runs answered still shows which run wrote that answer.
+                      </span>
+                    </span>
+                  )}
                 </span>
               </label>
             </div>
@@ -606,7 +616,8 @@ export function Evaluation() {
         </div>
       </div>
 
-      <section className="section" aria-labelledby="bycrit-heading">
+      {/* Named by its table region only: two regions with the same name are one too many (SWQ3-06). */}
+      <section className="section">
         <div className="section-head">
           <h2 className="section-title" id="bycrit-heading">
             Progress by criterion

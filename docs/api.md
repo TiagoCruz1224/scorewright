@@ -17,6 +17,10 @@ the endpoints that exist. Every route is also listed in the authorization matrix
   `415 unsupported_media_type`. A body larger than 6 MiB answers `413 payload_too_large` (Problem Details, like every
   error) before it is read; over 8 MiB the web server answers it, with the same body and headers. Bodies
   and query strings are validated; unknown fields are rejected.
+  - **Known limit:** a body sent in chunks (`Transfer-Encoding: chunked`, without `Content-Length`) and over 8 MiB is
+    cut off by the web server, and answers `400 malformed_request` ("The file upload did not complete") instead of
+    `413`. Sending it again does not help: the file is too large. The SPA always sends the length, and checks the
+    size before it uploads.
 - **Text fields** reject control characters (`control_character`), such as NUL or escape. Fields that can span lines
   (a project description) accept tab, line feed and carriage return.
 - **Lists** take `?page=` (1 to 10,000) and `?perPage=` (default 25, at most 100) and answer
@@ -205,7 +209,8 @@ its line number minus one in CSV (the first case after the header is `1`) or its
 - Quotes follow RFC 4180: a value that contains the separator, a quote or a line break is in double quotes, with each
   quote inside doubled.
 - `tags` are comma-separated in one cell; `metadata` is a JSON object in one cell, or empty. An empty `reference`
-  means none. Blank lines are skipped.
+  means none, in CSV and in JSON (`"reference": ""`) alike: an `exact_match` check on that case gives
+  `missing_reference`. Blank lines are skipped.
 
 ```csv
 id,input,reference,tags,metadata
@@ -409,7 +414,7 @@ The checks of automatic criteria. Each gives pass or fail; they run in the backg
 | `not_contains` | the same | does not contain the text |
 | `regex` | `{"pattern": "…", "ignoreCase"?: bool}`, pattern 1 to 500 characters on one line | matches the pattern |
 | `length` | `{"min"?: int, "max"?: int}`, at least one, each 0 to 50,000, `min` ≤ `max` (`max_below_min`) | has from `min` to `max` characters (Unicode code points), both included |
-| `valid_json` | none | is valid JSON as a whole: an object, an array or a single value such as `"text"`, with white space around it allowed |
+| `valid_json` | none | is valid JSON as a whole: an object, an array or a single value such as `"text"`, with white space around it allowed. JSON nested deeper than 512 levels (PHP's limit) counts as not valid |
 
 **Regex patterns** are PCRE, written **without delimiters or flags**: `^Refund \d+`, not `/^Refund \d+/i`. The server
 puts the pattern between delimiters that no pattern can contain, so a `/` needs no escaping, and always adds the `u`
@@ -419,8 +424,12 @@ compile: missing closing parenthesis at offset 7." It matches anywhere in the an
 
 When the check runs, any PCRE error gives a check error (`regex_error`) for that answer, never a crash: catastrophic
 backtracking such as `(a+)+$` on a long answer stops at PCRE's backtrack limit in milliseconds, and the same goes for
-the recursion and JIT stack limits and an answer that is not valid UTF-8. That limit is the guard against slow
-patterns, so PCRE's verbs, such as `(*SKIP)` and `(*FAIL)`, are allowed.
+the recursion and JIT stack limits and an answer that is not valid UTF-8.
+
+**PCRE's limit does not stop quadratic patterns** such as `s+$` or `(?=(a+))+$`: on an answer of 50,000
+characters (the longest a run may have) each one takes up to about 1 s. **The job's time budget** does (see
+[Automatic checks](#automatic-checks)): a slow pattern ends as `check_time_budget` check errors, and never holds up the
+worker or another project's checks for long. So PCRE's verbs, such as `(*SKIP)` and `(*FAIL)`, are allowed.
 
 ## Evaluations
 
@@ -433,6 +442,9 @@ of those runs: the items are what people score. Members read evaluations; owners
 - **Items** are grouped by case, in the order of the cases. Within a case the runs follow their letters or, in
   **blind mode**, a random order. Item ids are random (UUID v4), so they say nothing about the run or the order. A
   run that does not answer a case has no item for it.
+  - **Blind mode and partial runs:** when only one of the runs answered a case, that case has one answer, and it can
+    only be that run's. Blind mode cannot hide it (the run list shows which run is partial). The New evaluation
+    form says so when a chosen run is partial; to avoid it, compare runs that answer the same cases.
 - **Progress** counts manual scores only: `total` is items × manual criteria. Automatic checks report through the
   check job.
 - **Closing is final:** a closed evaluation is never reopened and takes no more scores or comments. So it waits for
@@ -506,7 +518,11 @@ A **check job** runs every automatic criterion of the rubric on every item, in t
     evaluation is saved;
   - `POST P/evaluations/{evaluationId}/automatic-checks` runs the checks again.
 - **`checkJob` in the evaluation** is the latest job: `status` goes `queued` → `running` → `succeeded`, or `failed`.
-  `processed` of `total` items are done, updated every 500 items, so the evaluation page can poll it.
+  `processed` of `total` items are done, updated at least every second, so the evaluation page can poll it.
+- **A time budget:** a job spends at most 120 s checking, and one criterion at most 30 s (about 12 times what a job
+  at the MVP limits needs). Past it, the items left get a check error `check_time_budget` for that criterion, or for
+  all of them, without running, and the job still ends `succeeded`. Running the checks again tries them again.
+- **Two workers** take the jobs, so a slow job does not hold up the others; a job is never run by both at once.
 - **When a try fails,** the worker tries the job 3 more times, with a growing delay (1, 2 and 4 s). Between tries the
   job is `queued` again, and each try starts it from the beginning, so it can still end as `succeeded`. Only after
   the last try is it `failed`, with `errorCode: "unexpected_error"` (the details are in the worker's log). Running
@@ -515,8 +531,9 @@ A **check job** runs every automatic criterion of the rubric on every item, in t
   scorer:
   - `value` 1 (passes) or 0 (fails), with `outcome: scored`;
   - or, when the check could not run, `value: null`, `outcome: check_error` and the reason in `errorCode`:
-    `missing_reference` (`exact_match` on a case without a reference) or `regex_error` (see
-    [Rubric body](#rubric-body)). A check error is not a fail: the results count it apart.
+    `missing_reference` (`exact_match` on a case without a reference), `regex_error` (see
+    [Rubric body](#rubric-body)) or `check_time_budget` (the job's or the criterion's time ran out, above). A check
+    error is not a fail: the results count it apart.
 - **Running it again gives the same rows:** a score is replaced, never added. So does a job that a stopped worker
   left half-done: its message comes back to the worker after 5 minutes, and the job starts again.
 - **Progress** (`progress`) never counts automatic scores, and `items/next` ignores them.
@@ -534,7 +551,8 @@ A **check job** runs every automatic criterion of the rubric on every item, in t
 ### Scoring
 
 Owners and evaluators score; viewers get `403`. Only open evaluations: on a closed one every scoring route, reads
-included, answers `409 evaluation_closed`.
+included, answers `409 evaluation_closed`. A score or comment that arrives while the owner closes the evaluation waits for the close,
+then answers `409 evaluation_closed` and writes nothing: a closed evaluation's results never change.
 
 | Endpoint | Answer |
 |---|---|
@@ -599,7 +617,10 @@ The same item **not in blind mode** has one more field, after `answer`:
 - **Who:** every member, except an evaluator while the evaluation is blind and open: `403
   results_hidden_until_closed`, so nobody scoring a blind evaluation learns which run does better. Once it is closed,
   or when it is not blind, evaluators read them too.
-- **Time:** under 500 ms at the MVP limits (`app:seed-performance`: 5,000 cases, 5 runs, about 150,000 scores).
+- **Time:** under 500 ms at the MVP limits (`app:seed-performance`: 5,000 cases, 5 runs, about 150,000 scores) in a
+  production build, as measured in [architecture §7](architecture.md#7-background-jobs-and-automatic-checks). The
+  development stack of the README (`APP_ENV=dev`, debug on, the code on a bind mount) is several times slower: about
+  2 s for the same results on Windows.
 
 ```json
 {

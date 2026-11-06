@@ -165,7 +165,7 @@ describe('scoring', () => {
 
     screen.getByText('This evaluation is closed.');
     expect(document.querySelectorAll('main input, main textarea, main select')).toHaveLength(0);
-    expect(screen.queryByRole('button', { name: /Next answer/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Next with missing scores' })).toBeNull();
   });
 
   it('ends with "All N answers scored", and an evaluator of a blind, open evaluation reads when the results unlock', async () => {
@@ -178,6 +178,18 @@ describe('scoring', () => {
 
     screen.getByRole('heading', { name: 'All 4 answers scored' });
     screen.getByText('Results unlock when the owner closes this evaluation.');
+  });
+
+  it('tells a viewer who opens it that owners and evaluators score (SWQ3-10)', async () => {
+    await renderApp(screenPath, {
+      '/api/me': ME,
+      '/api/projects/p1': project({ role: 'viewer' }),
+      [base]: evaluation(),
+      [`${base}/items/next`]: () => problemResponse(403, { code: 'forbidden', title: 'Forbidden' }),
+    });
+
+    screen.getByRole('heading', { level: 1, name: 'You cannot open this page' });
+    screen.getByText('Only the owners and evaluators of this project score answers. If you should, ask an owner to change your role.');
   });
 
   it('has no accessibility violations (axe), open and blind', async () => {
