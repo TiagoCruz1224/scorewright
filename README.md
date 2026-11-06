@@ -121,8 +121,8 @@ flowchart LR
 
 - **`./check.sh`** runs every check in the containers, and fails at the first problem:
   - the backend: PHP-CS-Fixer, PHPStan at level 8, PHPUnit against PostgreSQL and `composer audit`. The tests include
-    an authorization matrix (every route, for every role and for outsiders), the blind-mode rules and the numbers of
-    the results, worked out by hand;
+    an authorization matrix (every route, for every role and for outsiders), the blind-mode rules, the numbers of
+    the results, worked out by hand, and a check that [docs/api.md](docs/api.md) lists exactly the router's routes;
   - the frontend: ESLint, the contrast of every colour pair (WCAG AA, both themes), the Vitest tests with axe-core,
     the production build and `npm audit`.
 - **`./e2e.sh`** runs Playwright in its official image, against a Compose stack of its own that it removes at the end:
@@ -140,10 +140,58 @@ flowchart LR
 - **No locking between evaluators:** two people can score the same answer, and the last save wins.
 - **Blind mode and partial runs:** when only one run answered a case, its answer can only be that run's. The New
   evaluation form says so when you choose a partial run.
-- **The times in the docs are from a production build**, such as results under 500 ms at the MVP limits (5,000 cases,
-  5 runs). The development stack of the Quick start is several times slower.
-- **Not yet set up for the internet:** trusted proxies and hosts, among other things, come in the last slice of the
-  plan ([architecture §11](docs/architecture.md#11-implementation-plan)).
+- **The times in the docs are from the production profile** ([Production](#production)), such as results under 500 ms
+  at the MVP limits (5,000 cases, 5 runs). The development stack of the Quick start is several times slower.
+- **No account settings yet:** a user cannot change their password or delete their account. These, and the rest of
+  what OWASP ASVS level 1 still asks, are listed in [docs/security.md](docs/security.md#left-for-after-the-mvp).
+- **One machine:** the production profile runs everything on one Docker host; backups and updates are the
+  operator's.
+
+## Production
+
+[compose.prod.yaml](compose.prod.yaml) runs Scorewright as it runs in production, on one machine. There is no hosted
+deployment. Set three secrets of your own in `.env` first (for example `openssl rand -hex 32` for each):
+`APP_SECRET`, `POSTGRES_PASSWORD` and `APP_DATABASE_PASSWORD`. The app refuses to start with the placeholders of
+`.env.example`.
+
+```bash
+docker compose -f compose.prod.yaml up -d --build --wait
+```
+
+Then open http://localhost:8490 (`PROD_PORT` changes it) and choose Register. The demo data is for development only:
+`app:demo` refuses to run here. `docker compose -f compose.prod.yaml down` stops it; with `-v` it also deletes the data.
+It is a Compose project of its own, `scorewright-prod`, with its own volumes, so it runs next to the development stack.
+If your `.env` sets `COMPOSE_PROJECT_NAME`, that name wins: add `-p scorewright-prod` to each command.
+
+**What differs from the development stack:**
+- **One image** (the `prod` target of `backend/Dockerfile`): the code, the PHP dependencies without the dev ones, and
+  the frontend built by Vite. Caddy serves the frontend, with `index.html` for the app's own paths, and hands every
+  `/api` path to Symfony, so an unknown API path answers `404` Problem Details, never the page.
+- **PHP** runs with `APP_ENV=prod`, `php.ini-production`, and OPcache never checks the files again; there is no bind
+  mount and no Vite server.
+- **Headers:** a Content Security Policy on the frontend too, and HSTS when Caddy serves HTTPS.
+
+**The database** has two roles, in both stacks. The owner, `app`, runs the migrations when the `app` container starts.
+The app and the workers connect as `app_runtime`, which may only read and write rows: it is no superuser and owns
+nothing. The `app` container creates it, or updates its password, at each start (`app:database-role`), so a database
+from before this role works too.
+
+**HTTPS:** the profile serves plain HTTP on `127.0.0.1`. On a server, choose one of these:
+- **Caddy terminates TLS:** set `SERVER_NAME` to the domain name and publish ports 80 and 443. Caddy gets a certificate,
+  redirects HTTP to HTTPS, and sends `Strict-Transport-Security`.
+- **A proxy in front terminates TLS** and sends the requests to port 80. It must keep the `Host` header, set
+  `X-Forwarded-For` and `X-Forwarded-Proto`, and send HSTS itself.
+
+Then set, in `.env`:
+- `TRUSTED_HOSTS`: the host name as a regular expression, such as `^scorewright\.example\.com$` (default: `localhost`
+  and `127.0.0.1`). Any other `Host` answers `400`.
+- `TRUSTED_PROXIES`, behind a proxy only: its address, or `private_ranges`. Then the limits by IP count the client,
+  not the proxy, and Symfony knows the request came over HTTPS. Without a proxy, leave it empty: no
+  `X-Forwarded-For` is believed.
+
+The session cookie is `__Host-scorewright`: browsers keep it only over HTTPS, or on `localhost`.
+
+**Not included:** backups (the data is in the `db_data` volume: use `pg_dump`), monitoring, and e-mail.
 
 ## Development
 
@@ -162,6 +210,10 @@ are downloaded, longer before.
 |---|---|
 | http://localhost:5471 | The app (Vite dev server; it forwards `/api` to Symfony, so the browser sees one origin) |
 | http://localhost:8471/api/health | The API directly; `{"status":"ok"}` when the API and the database are up |
+
+**Browsers:** the session cookie is `Secure` (and `__Host-`), and Chrome, Edge and Firefox keep it on
+`http://localhost`, which they treat as secure. Safari (WebKit) does not, so it cannot sign in to the development
+stack; over HTTPS, in production, it can.
 
 The host ports are deliberately uncommon (8471 and 5471), so they rarely collide with other local stacks.
 - **To change them** (`APP_PORT`, `FRONTEND_PORT`) or the local passwords, edit `.env`. It is a copy of
@@ -187,9 +239,11 @@ To call the API from outside a browser, send any `csrf-token` value of 24 charac
 curl -X POST http://localhost:8471/api/auth/register -H 'Content-Type: application/json' -H 'csrf-token: any-random-value-of-24-or-more-characters' -d '{"email": "you@example.com", "password": "a long enough passphrase", "displayName": "You"}'
 ```
 
-The Vite proxy rewrites the `Host` header to `app`, so the `Origin` that a request to port 5471 carries never matches
-it. Browsers still pass the CSRF check, because they also send `Sec-Fetch-Site: same-origin`. A client that sends
-`Origin` without `Sec-Fetch-Site` gets `403 csrf_failed` there; it should call the API on port 8471 instead.
+Both ports work for a script. The Vite proxy on port 5471 passes the `Host` header on unchanged, so a request whose
+`Origin` is `http://localhost:5471` passes the same-origin check from any client, not only from browsers.
+
+To stay signed in from curl, send the session cookie back yourself (`-H 'Cookie: __Host-scorewright=…'`, from the
+`Set-Cookie` of the login): curl does not keep a `__Host-` cookie over plain HTTP, even on localhost.
 
 ### Where the files live
 
@@ -230,7 +284,8 @@ The options:
 
 Each run adds another project; archive it in its Settings page to hide it from the list.
 
-**The times in the docs are from a production build:** results under 500 ms at these limits, as measured in
+**The times in the docs are from the production profile** ([Production](#production)): the results take 170 ms at
+these limits, as measured in
 [architecture §7](docs/architecture.md#7-background-jobs-and-automatic-checks). This development stack runs Symfony in
 debug mode (`APP_ENV=dev`) with the code on a bind mount, so it is several times slower: on Windows, about 2 s for the
 same results.
@@ -241,7 +296,8 @@ same results.
 
 - backend (`composer check`): PHP-CS-Fixer, PHPStan (level 8), PHPUnit against PostgreSQL and `composer audit`. The
   tests use a separate `app_test` database in the same `db` server as the development database `app`; the script
-  creates and migrates it, and every test is rolled back, so the development data is not touched;
+  creates and migrates it as the database owner, and every test is rolled back, so the development data is not
+  touched;
 - frontend (`npm run check`): ESLint, the contrast of the design tokens (WCAG AA, both themes), the Vitest tests, the
   production build, and `npm audit` (any vulnerability in the dependencies that ship to the browser fails; for
   development tooling, high and critical ones fail).

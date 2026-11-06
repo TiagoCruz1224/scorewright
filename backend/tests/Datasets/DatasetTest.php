@@ -127,10 +127,20 @@ final class DatasetTest extends ApiTestCase
         $project = $fixture['project'];
         self::assertSame(201, self::upload($client, "$path/datasets", self::fixturePath('valid.csv'), 'cases.csv', ['name' => 'Support'])->getStatusCode());
 
-        $taken = self::upload($client, "$path/datasets", self::fixturePath('valid.csv'), 'cases.csv', ['name' => ' Support ']);
-        self::assertProblem($taken, 422, 'validation_failed');
-        self::assertSame('name_taken', self::json($taken)['errors'][0]['code']);
+        // Ignoring case, and the index decides too (a name the check missed would get name_taken from the catch).
+        foreach ([' Support ', 'SUPPORT'] as $name) {
+            $taken = self::upload($client, "$path/datasets", self::fixturePath('valid.csv'), 'cases.csv', ['name' => $name]);
+            self::assertProblem($taken, 422, 'validation_failed');
+            self::assertSame('name_taken', self::json($taken)['errors'][0]['code']);
+        }
         self::assertSame([1, 1, 3], self::storedRows($project));
+        // The database holds it too, for datasets, rubrics and evaluations.
+        $connection = self::getContainer()->get('doctrine.dbal.default_connection');
+        self::assertInstanceOf(Connection::class, $connection);
+        self::assertSame(3, (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM pg_indexes WHERE indexname IN ('dataset_project_lower_name_key', 'rubric_project_lower_name_key', 'evaluation_project_lower_name_key')
+            AND indexdef LIKE 'CREATE UNIQUE INDEX % (project_id, lower((name)::text))'",
+        ));
 
         foreach (['   ' => 'is_blank', str_repeat('a', 201) => 'too_long', "Two\nlines" => 'control_character'] as $name => $code) {
             $response = self::upload($client, "$path/datasets", self::fixturePath('valid.csv'), 'cases.csv', ['name' => (string) $name]);

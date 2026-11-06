@@ -40,12 +40,20 @@ final class RubricRepository extends ServiceEntityRepository
         return $rubric instanceof Rubric ? $rubric : null;
     }
 
-    /** Whether another rubric of the project has this name. */
+    /** Whether another rubric of the project has this name, ignoring case (as the unique index on lower(name)). */
     public function nameIsTaken(Uuid $projectId, string $name, ?Rubric $except = null): bool
     {
-        $rubric = $this->findOneBy(['project' => $projectId, 'name' => trim($name)]);
+        $query = $this->createQueryBuilder('r')
+            ->select('r.id')
+            ->where('r.project = :project AND LOWER(r.name) = LOWER(:name)')
+            ->setParameter('project', $projectId, UuidType::NAME)
+            ->setParameter('name', trim($name))
+            ->setMaxResults(1);
+        if (null !== $except) {
+            $query->andWhere('r.id <> :except')->setParameter('except', $except->getId(), UuidType::NAME);
+        }
 
-        return null !== $rubric && $rubric !== $except;
+        return [] !== $query->getQuery()->getResult();
     }
 
     /**

@@ -1,20 +1,34 @@
 # Development stack: `docker compose up`, then open http://localhost:5471 (see README.md).
 x-backend: &backend
-  build: ./backend
+  build:
+    context: ./backend
+    target: dev
   restart: unless-stopped
-  environment:
+  environment: &backend-env
     APP_SECRET: ${APP_SECRET:-!ChangeMe!}
-    DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD:-!ChangeMe!}@db:5432/app?serverVersion=18&charset=utf8
+    # The app connects as app_runtime: no superuser, owns nothing (the entrypoint of `app` sets it up).
+    DATABASE_URL: postgresql://app_runtime:${APP_DATABASE_PASSWORD:-!ChangeMe!}@db:5432/app?serverVersion=18&charset=utf8
+    # The Vite proxy, on the Compose network, sends X-Forwarded-For: the limits by IP see the browser, not the proxy.
+    # The hosts a developer opens (the ports are bound to the loopback); any other Host header answers 400.
+    SYMFONY_TRUSTED_PROXIES: private_ranges
+    SYMFONY_TRUSTED_HOSTS: ^(localhost|127\.0\.0\.1)$$
   volumes:
     - ./backend:/app
     # vendor/ and var/ stay in named volumes: bind mounts from a Windows or macOS host are slow,
     # and these two directories hold most of the files PHP reads.
     - backend_vendor:/app/vendor
     - backend_var:/app/var
+    # Read-only, for ApiReferenceTest: docs/api.md must list the router's routes.
+    - ./docs:/docs:ro
 
 services:
   app:
     <<: *backend
+    environment:
+      <<: *backend-env
+      # The database owner, for the migrations and the grants of app_runtime: the entrypoint keeps it from the server.
+      # check.sh runs the tests with it, as they create their own database.
+      DATABASE_OWNER_URL: postgresql://app:${POSTGRES_PASSWORD:-!ChangeMe!}@db:5432/app?serverVersion=18&charset=utf8
     depends_on:
       db:
         condition: service_healthy

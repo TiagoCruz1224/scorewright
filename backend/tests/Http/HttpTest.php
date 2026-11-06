@@ -33,6 +33,7 @@ final class HttpTest extends ApiTestCase
         self::assertProblem($client->getResponse(), 422, 'validation_failed');
     }
 
+    /** Never stored, and saved as a file rather than shown when a browser opens one by itself (ASVS 14.4.2). */
     public function testResponsesAreNeverStored(): void
     {
         $client = self::createApiClient();
@@ -41,6 +42,7 @@ final class HttpTest extends ApiTestCase
         foreach (['/api/me', '/api/projects', '/api/health', '/api/nonexistent'] as $path) {
             $client->request('GET', $path);
             self::assertContains('no-store', array_map('trim', explode(',', (string) $client->getResponse()->headers->get('Cache-Control'))), $path);
+            self::assertSame('attachment; filename="api.json"', $client->getResponse()->headers->get('Content-Disposition'), $path);
         }
     }
 }

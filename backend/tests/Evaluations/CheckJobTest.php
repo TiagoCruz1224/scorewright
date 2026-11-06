@@ -65,7 +65,7 @@ final class CheckJobTest extends ApiTestCase
 
         self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
         $evaluation = self::json($response);
-        self::assertSame(['status' => 'queued', 'processed' => 0, 'total' => 3, 'errorCode' => null], $evaluation['checkJob']);
+        self::assertSame(['status' => 'queued', 'processed' => 0, 'total' => 3, 'errorCode' => null, 'stalled' => false], $evaluation['checkJob']);
         $jobId = self::jobIds($evaluation['id'])[0];
         self::assertEquals([new RunAutomaticChecks($jobId)], self::sentMessages());
         self::assertSame([0], $levels, 'Dispatched once, after the commit');
@@ -73,7 +73,7 @@ final class CheckJobTest extends ApiTestCase
         self::consume();
 
         $evaluation = self::json(self::requestJson($client, 'GET', "$path/evaluations/{$evaluation['id']}"));
-        self::assertSame(['status' => 'succeeded', 'processed' => 3, 'total' => 3, 'errorCode' => null], $evaluation['checkJob']);
+        self::assertSame(['status' => 'succeeded', 'processed' => 3, 'total' => 3, 'errorCode' => null, 'stalled' => false], $evaluation['checkJob']);
         self::assertSame([
             ['baseline', 'c1', 'Same city', 1, 'scored', null],
             ['baseline', 'c1', 'Mentions a refund', 0, 'scored', null],
@@ -266,7 +266,7 @@ final class CheckJobTest extends ApiTestCase
     {
         [$evaluationId, $jobId] = self::evaluationWithJob();
         self::connection()->executeStatement("UPDATE check_job SET status = 'failed', created_at = created_at - INTERVAL '1 minute' WHERE id = ?", [$jobId]);
-        self::connection()->executeStatement("INSERT INTO check_job (id, evaluation_id, status, processed, total, created_at) VALUES (gen_random_uuid(), ?, 'queued', 0, 3, NOW())", [$evaluationId]);
+        self::connection()->executeStatement("INSERT INTO check_job (id, evaluation_id, status, processed, total, created_at, progressed_at) VALUES (gen_random_uuid(), ?, 'queued', 0, 3, NOW(), NOW())", [$evaluationId]);
 
         self::handle($jobId);
         self::handle('0199e0a4-0000-7000-8000-000000000000');
@@ -284,12 +284,27 @@ final class CheckJobTest extends ApiTestCase
         // A queued job is dispatched again, not duplicated: that also recovers a job whose dispatch failed.
         $response = self::requestJson($client, 'POST', $checks);
         self::assertSame(202, $response->getStatusCode(), (string) $response->getContent());
-        self::assertSame(['status' => 'queued', 'processed' => 0, 'total' => 3, 'errorCode' => null], self::json($response)['checkJob']);
+        self::assertSame(['status' => 'queued', 'processed' => 0, 'total' => 3, 'errorCode' => null, 'stalled' => false], self::json($response)['checkJob']);
         self::assertSame([$jobId], self::jobIds($evaluationId));
         self::assertEquals([new RunAutomaticChecks($jobId)], self::sentMessages());
 
-        self::connection()->executeStatement("UPDATE check_job SET status = 'running' WHERE id = ?", [$jobId]);
+        // Running, with progress less than 2 minutes ago: wait for it. (now() is when the test's transaction began.)
+        self::connection()->executeStatement("UPDATE check_job SET status = 'running', progressed_at = now() - interval '90 seconds' WHERE id = ?", [$jobId]);
         self::assertProblem(self::requestJson($client, 'POST', $checks), 409, 'check_job_running');
+        self::assertFalse(self::json(self::requestJson($client, 'GET', "$path/evaluations/$evaluationId"))['checkJob']['stalled']);
+
+        // Stalled, its worker most likely dead: shown as such, and dispatched again, still running.
+        self::connection()->executeStatement("UPDATE check_job SET progressed_at = now() - interval '150 seconds' WHERE id = ?", [$jobId]);
+        self::assertTrue(self::json(self::requestJson($client, 'GET', "$path/evaluations/$evaluationId"))['checkJob']['stalled']);
+        $response = self::requestJson($client, 'POST', $checks);
+        self::assertSame(202, $response->getStatusCode());
+        self::assertSame([$jobId], self::jobIds($evaluationId));
+        self::assertEquals([new RunAutomaticChecks($jobId)], self::sentMessages());
+        self::assertProblem(self::requestJson($client, 'POST', "$path/evaluations/$evaluationId/close"), 409, 'check_job_running');
+        // The handler takes it up from the start, and its progress is fresh again.
+        self::handle($jobId);
+        self::assertSame(['succeeded', 3, 3, null], self::job($jobId));
+        self::assertSame(0, (int) self::connection()->fetchOne("SELECT COUNT(*) FROM check_job WHERE id = ? AND progressed_at < now() - interval '1 minute'", [$jobId]));
 
         // A finished job, succeeded or failed: a new one.
         foreach (['succeeded', 'failed'] as $status) {
@@ -348,7 +363,7 @@ final class CheckJobTest extends ApiTestCase
             ['Mentions a refund', CheckType::Contains, ['text' => 'refund', 'ignoreCase' => false]],
         ]);
         $evaluationId = self::createEvaluation($rubric, [$run])->getId()->toRfc4122();
-        self::connection()->executeStatement("INSERT INTO check_job (id, evaluation_id, status, processed, total, created_at) VALUES (gen_random_uuid(), ?, 'queued', 0, 3, NOW() - INTERVAL '1 hour')", [$evaluationId]);
+        self::connection()->executeStatement("INSERT INTO check_job (id, evaluation_id, status, processed, total, created_at, progressed_at) VALUES (gen_random_uuid(), ?, 'queued', 0, 3, NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour')", [$evaluationId]);
 
         return [$evaluationId, self::jobIds($evaluationId)[0]];
     }

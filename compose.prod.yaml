@@ -1,0 +1,73 @@
+# Production profile, to run Scorewright locally as it runs in production (there is no deployment): the prod target
+# of backend/Dockerfile, with the code, its dependencies and the built frontend in the image, and one port where Caddy
+# serves the frontend and hands /api to PHP. See README.md, "Production".
+#
+#   docker compose -f compose.prod.yaml up -d --build --wait     then open http://localhost:8490
+#
+# There are no default secrets: set APP_SECRET, POSTGRES_PASSWORD and APP_DATABASE_PASSWORD in .env (.env.example),
+# to values of your own. The app refuses to start with the placeholders.
+name: scorewright-prod
+
+x-backend: &backend
+  build:
+    context: ./backend
+    target: prod
+    additional_contexts:
+      frontend: ./frontend
+  restart: unless-stopped
+  environment: &backend-env
+    APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env}
+    DATABASE_URL: postgresql://app_runtime:${APP_DATABASE_PASSWORD:?set APP_DATABASE_PASSWORD in .env}@db:5432/app?serverVersion=18&charset=utf8
+    # Behind a proxy that terminates TLS: its address (or private_ranges), so that X-Forwarded-For and
+    # X-Forwarded-Proto count. Empty: no proxy is trusted, and the client is the one that connects.
+    SYMFONY_TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+    # The host names the app answers to, as regular expressions separated by commas; any other Host answers 400.
+    SYMFONY_TRUSTED_HOSTS: ${TRUSTED_HOSTS:-^(localhost|127\.0\.0\.1)$$}
+
+services:
+  app:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      DATABASE_OWNER_URL: postgresql://app:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/app?serverVersion=18&charset=utf8
+      # A domain name: Caddy gets a certificate and serves HTTPS on ports 80 and 443 (publish them). Unset: plain HTTP
+      # on port 80, for a proxy in front that terminates TLS.
+      SERVER_NAME: ${SERVER_NAME:-:80}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:${PROD_PORT:-8490}:80
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://localhost/api/health') === false ? 1 : 0);"]
+      start_period: 2m
+      start_interval: 2s
+      interval: 30s
+
+  worker:
+    <<: *backend
+    command: ["php", "bin/console", "messenger:consume", "async", "--time-limit=3600", "--memory-limit=256M"]
+    deploy:
+      replicas: 2
+    healthcheck:
+      disable: true
+    depends_on:
+      app:
+        condition: service_healthy
+
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "app", "-d", "app"]
+      interval: 2s
+      retries: 30
+
+volumes:
+  db_data:

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http;
 
+use Doctrine\DBAL\Exception\ConnectionException;
+use Doctrine\DBAL\Exception\DriverException;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
@@ -46,6 +48,11 @@ final class ProblemDetailsListener
             return $exception;
         }
 
+        // The database is down or restarting (SWQ1-13): 503, to try again later, on any route (/api/me and login too).
+        if (self::databaseUnavailable($exception)) {
+            return new ApiProblem(503, 'database_unavailable', 'The database is not reachable. Try again in a moment', [], ['Retry-After' => '10']);
+        }
+
         // allow_extra_attributes: false makes the serializer throw this for unknown request fields.
         if ($exception instanceof ExtraAttributesException) {
             return ApiProblem::validation(array_map(
@@ -68,6 +75,28 @@ final class ProblemDetailsListener
         }
 
         return new ApiProblem(500, 'internal_error', 'Internal Server Error');
+    }
+
+    /**
+     * A failed or lost connection, from Doctrine or from PDO (the session handler has its own connection), anywhere in
+     * the chain: SQLSTATE class 08 (connection exception), or 57P01–57P03 (the server shuts down or is starting).
+     */
+    private static function databaseUnavailable(\Throwable $exception): bool
+    {
+        for ($cause = $exception; null !== $cause; $cause = $cause->getPrevious()) {
+            $state = match (true) {
+                $cause instanceof ConnectionException => '08000',
+                $cause instanceof DriverException => (string) $cause->getSQLState(),
+                // A failed connect has the driver's code (such as 7) and the SQLSTATE in the message only.
+                $cause instanceof \PDOException => (string) ($cause->errorInfo[0] ?? (preg_match('/^SQLSTATE\[(\w{5})\]/', $cause->getMessage(), $match) ? $match[1] : '')),
+                default => '',
+            };
+            if (str_starts_with($state, '08') || \in_array($state, ['57P01', '57P02', '57P03'], true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

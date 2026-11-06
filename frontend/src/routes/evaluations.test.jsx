@@ -116,6 +116,28 @@ describe('the evaluation page', () => {
     expect(reads).toBe(2);
   });
 
+  it('says when the checks have stalled, and lets the owner run them again', async () => {
+    await renderApp('/projects/p1/evaluations/e1', {
+      '/api/me': ME,
+      '/api/projects/p1': project({ role: 'owner' }),
+      '/api/projects/p1/evaluations/e1': evaluation({ checkJob: { status: 'running', processed: 2, total: 4, errorCode: null, stalled: true } }),
+    });
+
+    const checks = document.querySelector('.stat[role="status"]').textContent;
+    expect(checks).toContain('of 4 · stalled');
+    expect(checks).toContain('No progress for over 2 minutes: the worker running the checks has most likely stopped.');
+    expect(checks).toContain('or run them again now');
+    screen.getByRole('button', { name: 'Run checks again' });
+  });
+
+  it('puts Continue scoring first in the Tab order after the breadcrumb, before the dataset and rubric links', async () => {
+    await renderApp('/projects/p1/evaluations/e1', { '/api/me': ME, '/api/projects/p1': project({ role: 'owner' }), '/api/projects/p1/evaluations/e1': evaluation() });
+
+    const stops = [...document.querySelector('.page-head').querySelectorAll('a, button')].map((element) => element.textContent);
+    expect(stops[0]).toBe('Continue scoring');
+    expect(stops.slice(1)).toEqual(['Support cases v2', 'Support quality']);
+  });
+
   it('explains a 409 check_job_running when the owner closes while the checks run', async () => {
     await renderApp('/projects/p1/evaluations/e1', {
       '/api/me': ME,

@@ -1,0 +1,62 @@
+# Production (the prod target of the Dockerfile, compose.prod.yaml): Caddy serves the built frontend and hands /api
+# to PHP, so the browser sees one origin, as with the Vite proxy in development.
+# - SERVER_NAME unset: plain HTTP on port 80, for a proxy in front that terminates TLS (README, "Production").
+# - SERVER_NAME set to a domain: Caddy gets a certificate and serves HTTPS itself, on ports 80 and 443.
+{$SERVER_NAME::80} {
+	encode zstd br gzip
+
+	# As in the development Caddyfile: Symfony answers bodies over 6 MiB, Caddy those over 8 MiB.
+	request_body {
+		max_size 8MiB
+	}
+
+	# img-src data: for the chevron of the select fields, an SVG in the stylesheet.
+	header {
+		-Server
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+
+	# HSTS only on a response sent over HTTPS (never over plain HTTP, RFC 6797 §7.2). Behind a proxy that terminates
+	# TLS, the proxy sends it.
+	@https protocol https
+	header @https Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# The API: PHP answers every path under /api, unknown ones too (404 problem+json). index.html never does.
+	@api path /api /api/*
+	handle @api {
+		root * /app/public
+		php_server
+	}
+
+	# The built scripts and styles: their names change with their content, so they are cached for good. One that is
+	# not there answers 404, never index.html (which a browser would then keep for a year).
+	handle /assets/* {
+		root * /app/spa
+		@found file
+		header @found Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# The rest of the frontend, checked again on each use: the files, and index.html for any other path (the React
+	# Router routes).
+	handle {
+		root * /app/spa
+		header Cache-Control no-cache
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle_errors 413 {
+		header {
+			-Server
+			Content-Type application/problem+json
+			Cache-Control no-store
+			Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+			X-Content-Type-Options nosniff
+			Referrer-Policy same-origin
+		}
+		respond `{"type":"/problems/payload-too-large","title":"Payload Too Large","status":413,"code":"payload_too_large"}` 413
+	}
+}

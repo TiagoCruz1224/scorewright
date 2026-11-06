@@ -211,6 +211,10 @@
   .page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
   .page-title { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.022em; }
   .page-meta { margin-top: 4px; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+  /* The evaluation's heading puts its actions before the meta line in the page (Tab order), and the meta line on a
+     row of its own under them. */
+  .evaluation-head { align-items: center; row-gap: 6px; }
+  .evaluation-head > .page-meta { flex-basis: 100%; margin-top: 0; }
   .page-meta .dot::before { content: "·"; margin-right: 12px; color: var(--border-strong); }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .section { margin-top: 36px; }

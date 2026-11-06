@@ -184,7 +184,10 @@ final class EvaluationController
      * Runs the automatic checks again (owner, open evaluations only: closing is final, so the scores no longer change):
      * - a new job, unless one is queued: that one is dispatched again, which also recovers a job whose dispatch failed
      *   (the handler does a job once, however many messages name it);
-     * - a running job answers 409 check_job_running; a rubric without automatic criteria, 422 no_automatic_criteria.
+     * - a running job answers 409 check_job_running, unless it is stalled (CheckJob::isStalled, its worker most likely
+     *   died): that one is dispatched again too. If its worker still runs it after all, the handler's lock leaves it
+     *   to that worker;
+     * - a rubric without automatic criteria answers 422 no_automatic_criteria.
      */
     #[Route('/api/projects/{projectId}/evaluations/{evaluationId}/automatic-checks', name: 'evaluation_automatic_checks', methods: ['POST'], requirements: self::EVALUATION)]
     #[IsGranted(ProjectVoter::MANAGE, 'projectAccess')]
@@ -203,10 +206,10 @@ final class EvaluationController
                     throw self::closed();
                 }
                 $job = $this->evaluations->latestCheckJob($evaluation);
-                if (CheckJobStatus::Running === $job?->getStatus()) {
+                if (CheckJobStatus::Running === $job?->getStatus() && !$job->isStalled()) {
                     throw self::checkJobRunning();
                 }
-                if (null === $job || CheckJobStatus::Queued !== $job->getStatus()) {
+                if (null === $job || !\in_array($job->getStatus(), [CheckJobStatus::Queued, CheckJobStatus::Running], true)) {
                     $job = new CheckJob($evaluation, $this->items->count(['evaluation' => $evaluation]));
                     $this->entityManager->persist($job);
                 }
@@ -297,6 +300,7 @@ final class EvaluationController
                 'processed' => $job->getProcessed(),
                 'total' => $job->getTotal(),
                 'errorCode' => $job->getErrorCode(),
+                'stalled' => $job->isStalled(),
             ],
             'criteria' => array_map(static function (Criterion $criterion) use ($scored): array {
                 $data = $criterion->getData();

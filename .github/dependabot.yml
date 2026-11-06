@@ -1,0 +1,20 @@
+# Weekly update pull requests for the dependencies: Composer (the backend), npm (the frontend and the end-to-end
+# test) and the actions of the CI workflow. Each one runs CI (check.sh and the end-to-end test) before it is merged.
+version: 2
+updates:
+  - package-ecosystem: composer
+    directory: /backend
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

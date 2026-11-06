@@ -4,5 +4,6 @@
 set -e
 
 # --build: the tests must see the current PHP settings (backend/frankenphp/app.ini), not those of an older image.
-docker compose run --rm --build app sh -c 'composer install --no-progress --no-interaction && composer check'
+# The tests connect as the database owner: they create and migrate their own database (app_test).
+docker compose run --rm --build app sh -c 'composer install --no-progress --no-interaction && DATABASE_URL="$DATABASE_OWNER_URL" composer check'
 docker compose run --rm --no-deps frontend sh -c 'npm install --no-audit --no-fund && npm run check'

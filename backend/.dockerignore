@@ -1,0 +1,9 @@
+# Only the prod target copies the whole folder (COPY . ./): it installs its own dependencies and warms its own cache.
+/vendor/
+/var/
+/tests/
+/.env.local
+/.env.*.local
+/.php-cs-fixer.cache
+/.phpunit.cache/
+/phpunit.xml

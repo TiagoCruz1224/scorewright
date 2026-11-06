@@ -34,9 +34,17 @@ final class EvaluationRepository extends ServiceEntityRepository
         return $this->findOneBy(['project' => $projectId, 'id' => $evaluationId]);
     }
 
+    /** Ignoring case, as the unique index on lower(name). */
     public function nameIsTaken(Uuid $projectId, string $name): bool
     {
-        return null !== $this->findOneBy(['project' => $projectId, 'name' => trim($name)]);
+        return [] !== $this->createQueryBuilder('e')
+            ->select('e.id')
+            ->where('e.project = :project AND LOWER(e.name) = LOWER(:name)')
+            ->setParameter('project', $projectId, UuidType::NAME)
+            ->setParameter('name', trim($name))
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getResult();
     }
 
     /**

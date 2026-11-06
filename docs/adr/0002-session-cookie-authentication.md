@@ -10,7 +10,7 @@ JWT stored in `localStorage` can be read by any injected script and cannot be re
 ## Decision
 
 - Symfony's stateful firewall with `json_login`, and sessions stored in PostgreSQL.
-- The cookie is `HttpOnly`, `Secure` and `SameSite=Lax`. A session id from before login is replaced at login (no
+- The cookie is `__Host-scorewright`: `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/` and no `Domain`. A session id from before login is replaced at login (no
   session fixation), and logout invalidates the session.
 - Unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`) are protected against CSRF in three layers (all routes are under
   `/api`; the check applies to every path anyway):

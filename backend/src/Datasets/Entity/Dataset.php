@@ -11,10 +11,12 @@ use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
-/** A named collection of test cases. Every import adds an immutable DatasetVersion. */
+/**
+ * A named collection of test cases. Every import adds an immutable DatasetVersion. The name is unique in the project,
+ * ignoring case: an index on lower(name), in migration Version20261106160000 (Doctrine does not map it).
+ */
 #[ORM\Entity(repositoryClass: DatasetRepository::class)]
 #[ORM\Table(name: 'dataset')]
-#[ORM\UniqueConstraint(name: 'dataset_project_name_key', columns: ['project_id', 'name'])]
 class Dataset
 {
     #[ORM\Id]

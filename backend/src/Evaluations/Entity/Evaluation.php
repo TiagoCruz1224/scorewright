@@ -14,14 +14,13 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * A rubric applied to one or more runs of one dataset version (architecture §4). Its items, one per answer, are what
- * evaluators score (ADR 0005). The name is unique in the project. Closing is final (§12, decision 1).
+ * evaluators score (ADR 0005). The name is unique in the project, ignoring case (an index on lower(name)). Closing is final (§12, decision 1).
  *
  * The dataset version, the runs and the rubric are not deleted while an evaluation uses them: the API answers 409
  * in_use, and the foreign keys refuse it too.
  */
 #[ORM\Entity(repositoryClass: EvaluationRepository::class)]
 #[ORM\Table(name: 'evaluation')]
-#[ORM\UniqueConstraint(name: 'evaluation_project_name_key', columns: ['project_id', 'name'])]
 class Evaluation
 {
     #[ORM\Id]

@@ -3,8 +3,17 @@ framework:
     secret: '%env(APP_SECRET)%'
 
     # Sessions live in PostgreSQL (ADR 0002) and expire after 8 hours without a request.
+    # SYMFONY_TRUSTED_PROXIES and SYMFONY_TRUSTED_HOSTS set the proxies and the host names (compose.yaml,
+    # compose.prod.yaml). From a trusted proxy, only the client's address and the scheme count: the proxy keeps the
+    # Host header, as the Vite proxy does (changeOrigin: false).
+    trusted_headers: ['x-forwarded-for', 'x-forwarded-proto']
+
     session:
         handler_id: Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler
+        # __Host-: the browser only keeps it if it is Secure, has Path=/ and no Domain, so no subdomain or plain-HTTP
+        # page can set or overwrite it (SWQ1-11). Browsers treat http://localhost as secure, so development works too.
+        name: __Host-scorewright
+        cookie_path: /
         cookie_secure: true
         cookie_httponly: true
         cookie_samesite: lax

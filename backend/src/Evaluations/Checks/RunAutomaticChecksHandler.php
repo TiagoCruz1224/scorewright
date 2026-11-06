@@ -75,7 +75,7 @@ final class RunAutomaticChecksHandler
         }
 
         try {
-            $this->connection->executeStatement("UPDATE check_job SET status = 'running', processed = 0, error_code = NULL WHERE id = ?", [$message->jobId]);
+            $this->connection->executeStatement("UPDATE check_job SET status = 'running', processed = 0, error_code = NULL, progressed_at = now() WHERE id = ?", [$message->jobId]);
             $processed = $this->check((string) $job['evaluation_id'], $this->criteria((string) $job['rubric_id']), $message->jobId);
             $this->connection->executeStatement("UPDATE check_job SET status = 'succeeded', processed = ? WHERE id = ?", [$processed, $message->jobId]);
         } finally {
@@ -157,7 +157,7 @@ final class RunAutomaticChecksHandler
     {
         $this->connection->transactional(function () use ($scores, $processed, $jobId): void {
             $this->scores->saveAutomatic($scores);
-            $this->connection->executeStatement('UPDATE check_job SET processed = ? WHERE id = ?', [$processed, $jobId]);
+            $this->connection->executeStatement('UPDATE check_job SET processed = ?, progressed_at = now() WHERE id = ?', [$processed, $jobId]);
         });
     }
 }

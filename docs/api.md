@@ -2,7 +2,8 @@
 
 The design and the full list of planned endpoints are in [architecture.md](architecture.md) §5. This page documents
 the endpoints that exist. Every route is also listed in the authorization matrix test
-(`backend/tests/AuthorizationMatrixTest.php`), which fails when a route is missing from it.
+(`backend/tests/AuthorizationMatrixTest.php`), which fails when a route is missing from it, and
+`backend/tests/ApiReferenceTest.php` fails when this page and the router differ (method and path).
 
 **To start the API** (with the app and the demo accounts), follow the [README's Quick start](../README.md#quick-start).
 The API answers on http://localhost:8471, and through the app on http://localhost:5471. To call it from a script, see
@@ -11,12 +12,18 @@ the README's [Accounts and the API](../README.md#accounts-and-the-api).
 ## Conventions
 
 - JSON over HTTPS under `/api`, same origin as the SPA. Timestamps are ISO 8601 in UTC.
-- **Session:** signing in sets a session cookie (`HttpOnly`, `Secure`, `SameSite=Lax`). The session is stored in
-  PostgreSQL and ends after 8 hours without a request, or at logout.
+- **Session:** signing in sets the session cookie `__Host-scorewright` (`HttpOnly`, `Secure`, `SameSite=Lax`,
+  `Path=/`, no `Domain`): a browser keeps it only from a secure origin, which `http://localhost` counts as in Chromium and Firefox (not in Safari). The
+  session is stored in PostgreSQL and ends after 8 hours without a request, or at logout.
+  - **From a script:** curl does not keep a `__Host-` cookie over plain HTTP, even on localhost; send it back
+    yourself (`-H "Cookie: __Host-scorewright=…"`, from the `Set-Cookie` of the login), or use HTTPS.
 - **CSRF:** every `POST`, `PUT`, `PATCH` and `DELETE` needs a `csrf-token` header with a random value of at least 24
   characters (the SPA generates one per page load). A request without it, or whose `Origin`, `Referer` or
   `Sec-Fetch-Site` header shows another site, or with `Origin: null`, answers `403 csrf_failed`. Login and register
-  are covered too.
+  are covered too. The origin is compared with the `Host` the client sent: the Vite proxy (port 5471) and Caddy in
+  production pass it on unchanged.
+- **Host:** a `Host` that is not one of the configured host names answers `400` (`SYMFONY_TRUSTED_HOSTS`: in
+  development `localhost` and `127.0.0.1`; see the README's [Production](../README.md#production)).
 - **Request bodies** are JSON only: send `Content-Type: application/json`, otherwise the answer is
   `415 unsupported_media_type`. A body larger than 6 MiB answers `413 payload_too_large` (Problem Details, like every
   error) before it is read; over 8 MiB the web server answers it, with the same body and headers. Bodies
@@ -66,7 +73,7 @@ the README's [Accounts and the API](../README.md#accounts-and-the-api).
 | 429 | `too_many_login_attempts`, `too_many_registrations`, `too_many_invites`, `too_many_projects`, or `too_many_requests` for any other; with `Retry-After` |
 | 500 | `internal_error` (details are only in the server log) |
 | other | `http_error`: a status this table does not list, with its standard title |
-| 503 | `database_unavailable` (health check) |
+| 503 | `database_unavailable`, with `Retry-After`: the database cannot be reached (it is down or restarting), on any route, `/api/me` and login included |
 
 ## Endpoints
 
@@ -83,10 +90,13 @@ Public. Creates an account; it does not sign in.
 ```
 
 - `email`: valid address, at most 254 characters, stored lower-case, unique (`email_taken` otherwise, whatever the case).
+  The names of datasets, rubrics and evaluations are unique in their project the same way, ignoring case.
 - `password`: 12 to 128 characters, no composition rules.
 - `displayName`: 1 to 100 characters on one line (blank is rejected).
 - At most 10 registrations per hour from one client IP (`429 too_many_registrations`), because `email_taken` reveals
-  that an account exists.
+  that an account exists. Behind a trusted proxy (`SYMFONY_TRUSTED_PROXIES`, such as the Vite proxy in development),
+  the client IP is the one in `X-Forwarded-For`; from any other address that header is ignored. The same goes for the
+  other limits by IP.
 
 `201` with the user:
 
@@ -173,7 +183,7 @@ SHA-256.
 | Endpoint | Who | Answer |
 |---|---|---|
 | `GET P/datasets` | member | `200`, a list ordered by name; each dataset has its `latestVersion`. |
-| `POST P/datasets` | owner | Multipart: `name` (1 to 200 characters on one line, unique in the project: `422 name_taken` otherwise) and `file`. `201` with the dataset and `"versions": [version 1]`. |
+| `POST P/datasets` | owner | Multipart: `name` (1 to 200 characters on one line, unique in the project ignoring case: `422 name_taken` otherwise) and `file`. `201` with the dataset and `"versions": [version 1]`. |
 | `GET P/datasets/{datasetId}` | member | `200` with the dataset and all its `versions`, newest first. |
 | `DELETE P/datasets/{datasetId}` | owner | `204`; its versions, cases and runs go too. `409 in_use` while an evaluation uses one of its versions. |
 | `POST P/datasets/{datasetId}/versions` | owner | Multipart: `file`. `201` with the new version, numbered after the latest. |
@@ -392,7 +402,7 @@ A rubric:
 
 ### Rubric body
 
-- `name`: 1 to 200 characters on one line, unique in the project (`422 name_taken`).
+- `name`: 1 to 200 characters on one line, unique in the project ignoring case (`422 name_taken`).
 - `criteria`: an array of 1 to 30 criteria (`too_few`, `too_many`), in order. Each error's `field` is the path of the
   field, such as `criteria[2].checkParams.pattern`.
 
@@ -472,7 +482,7 @@ An evaluation:
     { "letter": "A", "id": "01a1ab5e-…", "label": "baseline-v1" },
     { "letter": "B", "id": "01a1ab6e-…", "label": "candidate-v2" }
   ],
-  "checkJob": { "status": "queued", "processed": 0, "total": 200, "errorCode": null },
+  "checkJob": { "status": "queued", "processed": 0, "total": 200, "errorCode": null, "stalled": false },
   "criteria": [
     { "id": "01a1ac2e-…", "name": "Tone", "kind": "scale_1_5", "checkType": null, "scored": 20 },
     { "id": "01a1ac2e-…", "name": "Correct", "kind": "pass_fail", "checkType": null, "scored": 17 },
@@ -504,7 +514,7 @@ Body of `POST P/evaluations`:
 
 | Field | | Rules |
 |---|---|---|
-| `name` | required | 1 to 200 characters on one line, unique in the project (`name_taken`) |
+| `name` | required | 1 to 200 characters on one line, unique in the project ignoring case (`name_taken`) |
 | `datasetVersion` | required | a version id of this project |
 | `runs` | required | 1 to 5 run ids (`too_few`, `too_many`), each once (`runs[N]`: `duplicate_run`), all of that version (`runs[N]`: `other_dataset_version`). Their order gives the letters A, B, C… |
 | `rubric` | required | a rubric id of this project |
@@ -539,7 +549,10 @@ A **check job** runs every automatic criterion of the rubric on every item, in t
     [Rubric body](#rubric-body)) or `check_time_budget` (the job's or the criterion's time ran out, above). A check
     error is not a fail: the results count it apart.
 - **Running it again gives the same rows:** a score is replaced, never added. So does a job that a stopped worker
-  left half-done: its message comes back to the worker after 5 minutes, and the job starts again.
+  left half-done: its message comes back to a worker 5 minutes after it was first delivered, and the job starts again.
+- **A stalled job:** `stalled` is `true` when the job is `running` but its progress has not moved for 2 minutes (it
+  moves at least every second while a worker runs it), so its worker most likely died. The evaluation page says so,
+  and running the checks again takes it up at once instead of in up to 5 minutes.
 - **Progress** (`progress`) never counts automatic scores, and `items/next` ignores them.
 
 `POST P/evaluations/{evaluationId}/automatic-checks` (owner, no body) answers `202` with the evaluation:
@@ -549,6 +562,7 @@ A **check job** runs every automatic criterion of the rubric on every item, in t
 | The latest job succeeded or failed, or there is none | a new job, `queued` |
 | The latest job is `queued` | the same job, sent to the worker again; this also recovers a job that never reached it. A job is done once, however many times it is sent. |
 | The latest job is `running` | `409 check_job_running` |
+| The latest job is `running` and `stalled` | the same job, sent to a worker again, still `running`. If its first worker is in fact still at it, the job's lock leaves it to that one. |
 | The evaluation is closed | `409 evaluation_closed`: closing is final, and its scores no longer change |
 | The rubric has no automatic criteria | `422 no_automatic_criteria` |
 
@@ -621,8 +635,8 @@ The same item **not in blind mode** has one more field, after `answer`:
 - **Who:** every member, except an evaluator while the evaluation is blind and open: `403
   results_hidden_until_closed`, so nobody scoring a blind evaluation learns which run does better. Once it is closed,
   or when it is not blind, evaluators read them too.
-- **Time:** under 500 ms at the MVP limits (`app:seed-performance`: 5,000 cases, 5 runs, about 150,000 scores) in a
-  production build, as measured in [architecture §7](architecture.md#7-background-jobs-and-automatic-checks). The
+- **Time:** under 500 ms at the MVP limits (`app:seed-performance`: 5,000 cases, 5 runs, about 150,000 scores) with the
+  production profile (170 ms), as measured in [architecture §7](architecture.md#7-background-jobs-and-automatic-checks). The
   development stack of the README (`APP_ENV=dev`, debug on, the code on a bind mount) is several times slower: about
   2 s for the same results on Windows.
 

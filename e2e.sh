@@ -19,7 +19,8 @@ trap 'compose --profile e2e down -v --remove-orphans --rmi local > /dev/null 2>&
 
 start=$(date +%s)
 compose up -d --build --wait
-# The frontend has no health check: wait until Vite answers (it installs the packages first).
+# --wait already waits for the frontend's health check (Vite answers once it has installed the packages); this also
+# checks the port it is published on.
 tries=0
 until curl -fs -o /dev/null "http://localhost:$FRONTEND_PORT/"; do
 	tries=$((tries + 1))

@@ -14,12 +14,11 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * An ordered list of criteria (architecture §4). The name is unique in the project. Once an evaluation uses the rubric
+ * An ordered list of criteria (architecture §4). The name is unique in the project, ignoring case (an index on lower(name)). Once an evaluation uses the rubric
  * it is locked: it is never edited again, so existing scores keep their meaning, but it can be duplicated.
  */
 #[ORM\Entity(repositoryClass: RubricRepository::class)]
 #[ORM\Table(name: 'rubric')]
-#[ORM\UniqueConstraint(name: 'rubric_project_name_key', columns: ['project_id', 'name'])]
 class Rubric
 {
     #[ORM\Id]

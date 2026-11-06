@@ -18,6 +18,10 @@ test('a new user goes from registering to the comparison and the CSV, through th
     await page.getByLabel('Password', { exact: true }).fill(owner.password);
     await page.getByRole('button', { name: 'Create account' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+    // The browser keeps the __Host- session cookie over http://localhost too, a secure context (ASVS 3.4.4).
+    expect(await page.context().cookies()).toEqual([
+      expect.objectContaining({ name: '__Host-scorewright', domain: 'localhost', path: '/', secure: true, httpOnly: true, sameSite: 'Lax' }),
+    ]);
   });
 
   const projectPath = await test.step('create the project', async () => {

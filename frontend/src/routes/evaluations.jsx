@@ -496,30 +496,30 @@ export function EvaluationHead({ project, evaluation, current, actions }) {
     ...(evaluation.runs.length > 1 ? [['Compare', `${evaluationPath(project, evaluation)}/compare`]] : []),
   ];
 
+  // The actions come right after the heading, before the links to the dataset and the rubric: the main one (Start or
+  // Continue scoring) is the first stop of Tab after the breadcrumb. The meta line wraps under both.
   return (
     <>
-      <div className="page-head">
-        <div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <h1 className="page-title">
-              <bdi>{evaluation.name}</bdi>
-            </h1>
-            <StatePills evaluation={evaluation} long />
-          </div>
-          <p className="page-meta">
-            <Link to={`/projects/${project.id}/datasets/${evaluation.datasetVersion.dataset.id}?version=${evaluation.datasetVersion.id}`}>
-              <bdi>{versionName(evaluation.datasetVersion)}</bdi>
-            </Link>
-            <span className="dot">
-              Rubric{' '}
-              <Link to={`/projects/${project.id}/rubrics/${evaluation.rubric.id}`}>
-                <bdi>{evaluation.rubric.name}</bdi>
-              </Link>
-            </span>
-            <span className="dot">Started {fullDate.format(new Date(evaluation.createdAt))}</span>
-          </p>
+      <div className="page-head evaluation-head">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="page-title">
+            <bdi>{evaluation.name}</bdi>
+          </h1>
+          <StatePills evaluation={evaluation} long />
         </div>
         {actions}
+        <p className="page-meta">
+          <Link to={`/projects/${project.id}/datasets/${evaluation.datasetVersion.dataset.id}?version=${evaluation.datasetVersion.id}`}>
+            <bdi>{versionName(evaluation.datasetVersion)}</bdi>
+          </Link>
+          <span className="dot">
+            Rubric{' '}
+            <Link to={`/projects/${project.id}/rubrics/${evaluation.rubric.id}`}>
+              <bdi>{evaluation.rubric.name}</bdi>
+            </Link>
+          </span>
+          <span className="dot">Started {fullDate.format(new Date(evaluation.createdAt))}</span>
+        </p>
       </div>
       <nav className="subnav" aria-label="Evaluation">
         {sections.map(([label, to]) => (
@@ -588,18 +588,20 @@ export function Evaluation() {
               <p className="stat-value">
                 <span>{n(checkJob.processed)}</span>{' '}
                 <small>
-                  of {n(checkJob.total)} · {CHECK_STATES[checkJob.status]}
+                  of {n(checkJob.total)} · {checkJob.stalled ? 'stalled' : CHECK_STATES[checkJob.status]}
                 </small>
               </p>
               <div className="meter meter-lg" aria-hidden="true">
                 <span style={{ width: `${checkJob.total ? Math.round((100 * checkJob.processed) / checkJob.total) : 0}%` }} />
               </div>
               <p className="small muted">
-                {activeJob(evaluation)
-                  ? 'Updates every few seconds.'
-                  : checkJob.status === 'failed'
-                    ? 'The checks stopped on an error. Run them again.'
-                    : 'Every answer is checked.'}
+                {checkJob.stalled
+                  ? `No progress for over 2 minutes: the worker running the checks has most likely stopped. Another worker takes them up 5 minutes after they started${owner && open ? ', or run them again now' : ''}. If this keeps happening, check that the workers are running.`
+                  : activeJob(evaluation)
+                    ? 'Updates every few seconds.'
+                    : checkJob.status === 'failed'
+                      ? 'The checks stopped on an error. Run them again.'
+                      : 'Every answer is checked.'}
               </p>
             </>
           ) : (
@@ -665,7 +667,7 @@ export function Evaluation() {
             <p className="small muted" style={{ flex: '1 1 320px' }}>
               Automatic checks can be run again once they finish, for example after a case’s reference changes in a new version.
             </p>
-            {!activeJob(evaluation) && (
+            {(!activeJob(evaluation) || checkJob.stalled) && (
               <Form method="post">
                 <input type="hidden" name="intent" value="checks" />
                 <button type="submit" className="btn btn-sm">

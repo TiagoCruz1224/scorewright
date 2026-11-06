@@ -19,6 +19,8 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\UniqueConstraint(name: 'check_job_active_key', columns: ['evaluation_id'], options: ['where' => self::ACTIVE])]
 class CheckJob
 {
+    public const STALLED_AFTER = 120;
+
     /** As PostgreSQL returns it, so the mapping and the database compare equal (status IN ('queued', 'running')). */
     private const ACTIVE = "((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[]))";
 
@@ -39,6 +41,10 @@ class CheckJob
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
+    /** When the job started or last saved its progress; RunAutomaticChecksHandler sets it, in SQL, at least every second. */
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE)]
+    private \DateTimeImmutable $progressedAt;
+
     public function __construct(
         #[ORM\ManyToOne]
         #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
@@ -49,7 +55,17 @@ class CheckJob
         private int $total,
     ) {
         $this->id = Uuid::v7();
-        $this->createdAt = new \DateTimeImmutable();
+        $this->createdAt = $this->progressedAt = new \DateTimeImmutable();
+    }
+
+    /**
+     * Running, with no progress for STALLED_AFTER seconds: its worker most likely died (the handler saves the progress
+     * at least every second). The transport delivers the message again 300 s after it first did (redeliver_timeout),
+     * and running the checks again (POST …/automatic-checks) takes it up at once.
+     */
+    public function isStalled(): bool
+    {
+        return CheckJobStatus::Running === $this->status && $this->progressedAt < new \DateTimeImmutable('-'.self::STALLED_AFTER.' seconds');
     }
 
     public function getId(): Uuid

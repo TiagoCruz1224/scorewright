@@ -122,7 +122,11 @@ final class RubricTest extends ApiTestCase
         self::createRubric(self::createProjectWithMembers('Theirs')['project'], 'Tone');
 
         self::assertSame([['field' => 'name', 'code' => 'name_taken']], self::errorFieldsAndCodes(self::requestJson($client, 'POST', "$path/rubrics", ['name' => 'Quality ', 'criteria' => self::CRITERIA])));
+        self::assertSame([['field' => 'name', 'code' => 'name_taken']], self::errorFieldsAndCodes(self::requestJson($client, 'POST', "$path/rubrics", ['name' => 'QUALITY', 'criteria' => self::CRITERIA])));
         self::assertSame([['field' => 'name', 'code' => 'name_taken']], self::errorFieldsAndCodes(self::requestJson($client, 'PUT', "$path/rubrics/$second", ['name' => 'Quality', 'criteria' => self::CRITERIA])));
+        self::assertSame([['field' => 'name', 'code' => 'name_taken']], self::errorFieldsAndCodes(self::requestJson($client, 'PUT', "$path/rubrics/$second", ['name' => 'quality', 'criteria' => self::CRITERIA])));
+        // A rubric may change the case of its own name.
+        self::assertSame(200, self::requestJson($client, 'PUT', "$path/rubrics/$first", ['name' => 'quality', 'criteria' => self::CRITERIA])->getStatusCode());
         self::assertSame(200, self::requestJson($client, 'PUT', "$path/rubrics/$first", ['name' => 'Quality', 'criteria' => self::CRITERIA])->getStatusCode());
         self::assertSame(201, self::requestJson($client, 'POST', "$path/rubrics", ['name' => 'Tone', 'criteria' => self::CRITERIA])->getStatusCode());
     }

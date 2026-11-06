@@ -42,8 +42,10 @@ flowchart LR
 ```
 
 Docker Compose services: `app` (FrankenPHP), `worker` (same image, `messenger:consume async`) and `db` (PostgreSQL 18).
-In development, a `frontend` service runs the Vite dev server and proxies `/api`, so the browser still sees one origin.
-This avoids CORS altogether: cross-origin requests are not allowed.
+In development (`compose.yaml`), a `frontend` service runs the Vite dev server and proxies `/api`, so the browser
+still sees one origin. In production (`compose.prod.yaml`, the `prod` target of `backend/Dockerfile`), the `app`
+image holds the built SPA and Caddy serves it, as in the diagram; every `/api` path goes to Symfony, and every other
+path that is not a file gets `index.html`. Either way there is no CORS: cross-origin requests are not allowed.
 
 ## 3. Modules and boundaries
 
@@ -406,8 +408,13 @@ page or a stack trace.
 
 - Session cookie, because the SPA is served from the same origin. Symfony `json_login` handles
   `/api/auth/login`; logout invalidates the session.
-- The cookie is `HttpOnly`, `Secure`, `SameSite=Lax`. Sessions are stored in PostgreSQL (`PdoSessionHandler`), so a
-  container restart does not sign everyone out.
+- The cookie is `__Host-scorewright`: `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/` and no `Domain`. Browsers keep
+  it over HTTPS, and Chromium and Firefox on `http://localhost` too (Safari does not, README). Sessions are stored in PostgreSQL (`PdoSessionHandler`), so a container
+  restart does not sign everyone out.
+- **Proxies and hosts:** `SYMFONY_TRUSTED_PROXIES` and `SYMFONY_TRUSTED_HOSTS` (Compose sets them; the README's
+  Production section explains them). From a trusted proxy only `X-Forwarded-For` and `X-Forwarded-Proto` count, so
+  the limits by IP see the client. The proxy keeps the `Host` header, as the Vite proxy does (`changeOrigin: false`),
+  so the same-origin check compares the `Origin` with the host the client asked for.
 - **CSRF:** unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`) need the `csrf-token` header (a random value of at
   least 24 characters), checked by Symfony's stateless CSRF token manager in its header variant (`check_header: true`,
   no double-submit cookie). It also rejects the request when `Origin`, `Referer` or `Sec-Fetch-Site` shows another
@@ -503,17 +510,18 @@ tag, a per-case comparison and the cases with the largest disagreement.
 - `App\Analytics\Results` does it in one scan of the evaluation's scores, grouped by the case's tags (a few dozen
   combinations), criterion, run, outcome and value, plus one query for the coverage. These reads run in a transaction
   that lowers PostgreSQL's parallel-query thresholds (`set_config(…, true)`), so the scan uses parallel workers.
-- Measured with `app:seed-performance` (148,800 scores): 143 ms in the process; 167 ms for the whole request in a prod-mode
-  container with the code copied in (median of 20, p95 about 200 ms). With the code bind-mounted from a Windows disk, as
-  in development, every request is slower. From the Windows host the median is 407 ms, because Docker
-  Desktop's port forwarding adds about 250 ms to every request.
+- **Measured with the production profile** (`compose.prod.yaml`, 2026-11-06) and `app:seed-performance` (148,800
+  scores), median of 20 requests: 170 ms for the whole request inside the `app` container (p95 184 ms), 182 ms from
+  the Windows host (p95 217 ms). From the host, use `127.0.0.1`: with `localhost`, curl and some clients try IPv6
+  (`::1`) first, where nothing listens, and on Windows that costs about 250 ms per new connection. (Slice 12 took
+  that for the cost of Docker Desktop's port forwarding; it is about 10 ms.) The development stack, in debug mode with
+  the code on a bind mount, is several times slower.
 - **The comparison** of two runs uses the same scan, kept to their scores on the cases both answered (`EXISTS` on the
   other run's answer), so a case one of them skipped weighs on neither side. The largest disagreements are one more
   pass over both runs' scores that puts each (case, criterion)'s two values side by side (`MIN(…) FILTER`), then keeps
   the 20 that differ most from 0 to 100. A case page reads its answers, scores and comments in one query, plus the
-  disagreements when it is opened from a comparison. Measured the same way: the comparison takes 88 ms in the process,
-  147 ms for the whole request in the container (p95 193 ms) and 394 ms from the Windows host (p95 477 ms); a case
-  page 42, 80 and 313 ms.
+  disagreements when it is opened from a comparison. Measured the same way: the comparison takes 137 ms in the container (p95
+  167 ms) and 157 ms from the host (p95 214 ms); a case page 75 and 89 ms.
 - **The CSV export** (`App\Analytics\CsvExport`, `GET …/export.csv`) has one row per answer in the evaluation, with
   the case, the run, the answer, each criterion's score, the comment and who wrote it (format in
   [api.md](api.md#export)). It is streamed from a server-side cursor (`DECLARE … CURSOR`, `FETCH 1000`), so PHP's
@@ -521,10 +529,11 @@ tag, a per-case comparison and the cases with the largest disagreement.
   - **Formula injection:** every cell of text that comes from users and starts with `=`, `+`, `-`, `@`, tab or carriage
     return gets a leading `'`, so a spreadsheet shows it as text. The numbers the app writes (1–5 scores) are written as
     numbers.
-  - Measured with the seed (24,800 answers, a 4.1 MB file), in a prod-mode container:
-    - 757 ms in the process, with PHP's peak memory 2.9 MB above where it started; for 12 answers it is 0.03 MB. The
-      peak is one batch of 1,000 rows at most, whatever the size of the file;
-    - the whole download takes 933 ms in the container and 1.19 s from the Windows host;
+  - Measured with the seed (24,800 answers, a 4.1 MB file):
+    - in slice 14, in a prod-mode container: 757 ms in the process, with PHP's peak memory 2.9 MB above where it
+      started; for 12 answers it is 0.03 MB. The peak is one batch of 1,000 rows at most, whatever the size of the file;
+    - with the production profile, the whole download takes 919 ms in the container and 958 ms from the Windows host
+      (median of 5);
     - PostgreSQL sorts the rows before the first `FETCH`, so the first byte comes after about 0.5 s.
 
 ## 8. Testing strategy
@@ -535,18 +544,20 @@ tag, a per-case comparison and the cases with the largest disagreement.
 | Functional API | PHPUnit `WebTestCase` against **PostgreSQL** (Docker in local and CI), each test in a rolled-back transaction | Every endpoint's happy path and errors; all-or-nothing imports; rubric locking; closed evaluations; deletion rules (`in_use`); archived projects (`project_archived`, restore); unknown request fields → 422. |
 | Authorization matrix | PHPUnit data provider | **Every route** × {anonymous, non-member, viewer, evaluator, owner} → expected status. For evaluation routes the matrix adds the **evaluation state** {not blind, blind and open, closed}. Scoring routes expect `409` on closed evaluations; result routes expect `403` for evaluators on blind and open ones. The test reads the router and fails if a new route has no matrix entry (MVP criterion 2). |
 | Blind mode | PHPUnit | As an evaluator on a blind, open evaluation, call **every route the evaluator may read** and assert that no response pairs an answer's text with its run id, label or letter. |
-| Architecture | PHPUnit | Module dependency direction (§3). |
-| Frontend unit | Vitest and Testing Library (jsdom), in `npm run check` | The API client (CSRF header, Problem Details, 401 redirect); the form error summary; project pages showing only the role's actions. Later: scoring screen (shortcuts, ignored in text fields, autosave and Retry, comment), import-error summary and table, comparison table and chart alternative. |
-| End to end | Playwright with axe-core | MVP acceptance flow 1 on the demo stack, plus automated WCAG checks on the scoring, results and import pages. |
+| Architecture | PHPUnit | Module dependency direction (§3), however a module is named: `use`, group `use`, strings. |
+| API reference | PHPUnit | `docs/api.md` documents every route of the router (method and path), and no other. |
+| Frontend unit | Vitest and Testing Library (jsdom), in `npm run check` | The API client (CSRF header, Problem Details, 401 redirect); the form error summary; project pages showing only the role's actions; the scoring screen (shortcuts, ignored in text fields, autosave and Retry, comment), the import-error summary and table, the results and comparison tables and the chart alternatives; axe-core on each page. |
+| End to end | Playwright with axe-core (`./e2e.sh`, its own Compose project) | MVP acceptance flow 1 through the UI, an evaluator locked out of a blind evaluation's results, the demo's results and comparison, and axe-core on Projects, Dataset, Rubric editor, Scoring and Compare. |
 | Static analysis | PHPStan (level 8 to start), PHP-CS-Fixer, ESLint for JavaScript and JSX (`@eslint/js` recommended rules plus the React Hooks plugin) | Run in CI and locally with one command. |
 | Dependencies | `composer audit`; `npm audit --omit=dev` (any severity in what ships to the browser) and `npm audit --audit-level=high` (dev tooling, including the Vite dev server) | Run in CI and locally with the same command. |
-| Performance | `app:seed-performance` (5,000 cases × 5 runs, one evaluation with scores) and a command that times the list and results queries | Run before each release; target under 500 ms on a laptop. |
+| Performance | `app:seed-performance` (5,000 cases × 5 runs, one evaluation with scores), then the results, comparison, case and export requests timed against the production profile (§7) | Run before each release; target under 500 ms on a laptop. |
 
 SQLite is not used for tests: the schema relies on PostgreSQL types (JSONB, arrays, partial indexes).
 
 ## 9. Security requirements
 
-OWASP ASVS level 1 is the reference. The concrete rules for this project:
+OWASP ASVS level 1 is the reference: [security.md](security.md) goes through it requirement by requirement, with the
+test of each, and lists what is left for after the MVP. The concrete rules for this project:
 
 - **Access control:** deny by default (`access_control` ends with `^/`, so a route added outside `/api` needs a
   signed-in user too), membership resolved before anything else, 404 for other projects, an authorization test for
@@ -570,23 +581,30 @@ OWASP ASVS level 1 is the reference. The concrete rules for this project:
     checked by the app (parameters `dataset_import.max_file_bytes` and `dataset_import.max_cases` in
     `backend/config/services.yaml`), plus the field limits in §4. Raising the file limit above about 6 MB means
     raising `post_max_size`, `upload_max_filesize` (`backend/frankenphp/app.ini`) and `request_body max_size`
-    (`backend/frankenphp/Caddyfile`, kept 2 MiB above) with it.
+    (`backend/frankenphp/Caddyfile` and `Caddyfile.prod`, kept 2 MiB above) with it.
   - JSON parsing has a depth limit.
   - PHP errors go to the log only (`display_errors = Off`, also in development).
   - Uploaded files are parsed in memory, **never stored or served back** ([ADR 0004](adr/0004-synchronous-all-or-nothing-imports.md)).
 - **Output:** React escapes text by default, and answers are rendered as text only (`pre-wrap`), never as HTML.
   CSV formula injection is neutralised.
 - **Headers (Caddy):**
-  - `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'`
+  - `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'`; the
+    production frontend adds `img-src 'self' data:` (an SVG in the stylesheet) and `form-action 'self'`
   - `X-Content-Type-Options: nosniff`
   - `Referrer-Policy: same-origin`
   - no `Server` header
-  - HSTS when served over HTTPS
-  - `Cache-Control: no-store` on API responses (set by Symfony)
-- **Privacy:** case contents, answers, comments and import excerpts never go into logs. A Monolog processor drops
-  request bodies, and exception messages do not include payloads.
-- **Secrets:** `.env.example` holds placeholders only; real values come from environment variables. CI fails if
-  `composer audit` reports a known vulnerability.
+  - `Strict-Transport-Security: max-age=31536000; includeSubDomains` when Caddy serves HTTPS (production with
+    `SERVER_NAME`); behind a TLS proxy, the proxy sends it
+  - `Cache-Control: no-store` and `Content-Disposition: attachment` on API responses (set by Symfony)
+- **Privacy:** case contents, answers, comments and import excerpts never go into logs. Nothing logs a request body,
+  and exception messages do not include payloads (Symfony's own logger, at warning level and above in production).
+- **The database:** the app and the workers connect as `app_runtime`, which may read and write rows and nothing more
+  (no superuser, owns nothing; `app:database-role`). The migrations run as the owner, from the `app` container's
+  entrypoint, which keeps the owner's URL from the server it starts. When the database cannot be reached, every
+  route answers `503 database_unavailable` with `Retry-After`.
+- **Secrets:** `.env.example` holds placeholders only; real values come from environment variables, and the
+  production image refuses to start with the placeholders. CI fails if `composer audit` reports a known
+  vulnerability.
 - **Denial of service:** the body, import, field and job limits above, list pagination capped at 100 per page and
   10,000 pages, and the rate limits on login, registration, invites and project creation.
 

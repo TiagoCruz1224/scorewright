@@ -9,6 +9,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\BrowserKit\Cookie;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Uid\Uuid;
 
 final class AuthTest extends ApiTestCase
@@ -94,6 +95,17 @@ final class AuthTest extends ApiTestCase
         self::assertSame(201, self::register($client, 'eva@example.com', str_repeat('a', 128))->getStatusCode());
     }
 
+    /** Any Unicode character, spaces included, and never cut short: bcrypt alone would ignore what follows 72 bytes (ASVS 2.1.3, 2.1.4). */
+    public function testAPasswordIsTakenWholeWhateverItsCharacters(): void
+    {
+        $client = self::createApiClient();
+        $password = str_repeat('ü', 36).' 🔑 and the end of a long passphrase';
+        self::assertSame(201, self::register($client, 'long@example.com', $password)->getStatusCode());
+
+        self::assertProblem(self::login($client, 'long@example.com', str_repeat('ü', 36)), 401, 'invalid_credentials');
+        self::assertSame(200, self::login($client, 'long@example.com', $password)->getStatusCode());
+    }
+
     public function testRegistrationsAreLimitedTo10PerHourForAnAddress(): void
     {
         $client = self::createApiClient();
@@ -104,6 +116,33 @@ final class AuthTest extends ApiTestCase
         $response = self::register($client, 'user11@example.com');
         self::assertProblem($response, 429, 'too_many_registrations');
         self::assertRetryAfter($response, 3600);
+    }
+
+    /**
+     * Behind a trusted proxy (SYMFONY_TRUSTED_PROXIES: private_ranges in compose.yaml and .env.test), the limit counts
+     * the client that X-Forwarded-For names, as for the Vite proxy; from any other address that header does not count.
+     */
+    public function testTheLimitByAddressSeesTheClientBehindATrustedProxy(): void
+    {
+        $client = self::createApiClient();
+        $register = static function (string $email, string $remoteAddress, string $forwardedFor) use ($client): Response {
+            $client->request('POST', '/api/auth/register', server: ['CONTENT_TYPE' => 'application/json', 'REMOTE_ADDR' => $remoteAddress, 'HTTP_X_FORWARDED_FOR' => $forwardedFor], content: json_encode(['email' => $email, 'password' => self::PASSWORD, 'displayName' => 'Test user'], \JSON_THROW_ON_ERROR));
+
+            return $client->getResponse();
+        };
+
+        // Through the proxy: ten for one client, and another client behind the same proxy is not held up by it.
+        for ($registration = 1; $registration <= 10; ++$registration) {
+            self::assertSame(201, $register("a$registration@example.com", '172.18.0.5', '203.0.113.7')->getStatusCode());
+        }
+        self::assertProblem($register('a11@example.com', '172.18.0.5', '203.0.113.7'), 429, 'too_many_registrations');
+        self::assertSame(201, $register('b1@example.com', '172.18.0.5', '203.0.113.8')->getStatusCode());
+
+        // Straight from the internet: another X-Forwarded-For on each request does not get round the limit.
+        for ($registration = 1; $registration <= 10; ++$registration) {
+            self::assertSame(201, $register("c$registration@example.com", '198.51.100.1', "203.0.113.$registration")->getStatusCode());
+        }
+        self::assertProblem($register('c11@example.com', '198.51.100.1', '203.0.113.99'), 429, 'too_many_registrations');
     }
 
     public function testMalformedJsonIsABadRequest(): void
@@ -151,9 +190,14 @@ final class AuthTest extends ApiTestCase
         self::assertTrue($cookie->isSecure());
         self::assertTrue($cookie->isHttpOnly());
         self::assertSame('lax', $cookie->getSameSite());
+        // What a __Host- cookie needs (ASVS 3.4.4): Secure, Path=/ and no Domain. The tests' session storage has a name
+        // of its own; the browser end-to-end test sees the real one.
+        self::assertSame('/', $cookie->getPath());
+        self::assertStringNotContainsStringIgnoringCase('domain=', (string) $cookie);
 
         $options = self::getContainer()->getParameter('session.storage.options');
         self::assertIsArray($options);
+        self::assertSame('__Host-scorewright', $options['name']);
         self::assertSame(28800, $options['gc_maxlifetime']);
     }
 

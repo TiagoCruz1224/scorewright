@@ -50,7 +50,7 @@ final class EvaluationTest extends ApiTestCase
         // 5 items (3 + 2 answers) × 2 manual criteria: progress never counts the automatic one.
         self::assertSame(['scored' => 0, 'total' => 10], $evaluation['progress']);
         self::assertSame(['scored' => 0, 'total' => 5], $evaluation['answers']);
-        self::assertSame(['status' => 'queued', 'processed' => 0, 'total' => 5, 'errorCode' => null], $evaluation['checkJob']);
+        self::assertSame(['status' => 'queued', 'processed' => 0, 'total' => 5, 'errorCode' => null, 'stalled' => false], $evaluation['checkJob']);
         // "Progress by criterion": the scores given on each, in the rubric's order.
         self::assertSame([['Tone', 'scale_1_5', null, 0], ['Correct', 'pass_fail', null, 0], ['Refund', 'automatic', 'contains', 0]], array_map(
             static fn (array $criterion): array => [$criterion['name'], $criterion['kind'], $criterion['checkType'], $criterion['scored']],
@@ -123,6 +123,7 @@ final class EvaluationTest extends ApiTestCase
 
         self::assertSame(201, self::create($client, $path, $version, [$run], $rubric, ['name' => 'Weekly'])->getStatusCode());
         self::assertSame([['field' => 'name', 'code' => 'name_taken']], $errors(['name' => 'Weekly']));
+        self::assertSame([['field' => 'name', 'code' => 'name_taken']], $errors(['name' => 'wEEKLY']));
         self::assertSame(1, self::stored('SELECT COUNT(*) FROM evaluation WHERE project_id = ?', $fixture['project']->getId()->toRfc4122()));
     }
 
