@@ -151,7 +151,8 @@ describe('scoring', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe(`${screenPath}/i1`));
     await screen.findByText('Answer 1 of 2 for this case');
-    expect(screen.getByRole('button', { name: 'Previous answer' }).disabled).toBe(true);
+    const previous = screen.getByRole('button', { name: 'Previous' });
+    expect([previous.disabled, previous.getAttribute('aria-keyshortcuts')]).toEqual([true, 'K']);
   });
 
   it('says a closed evaluation is closed, without any field', async () => {

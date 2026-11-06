@@ -112,6 +112,29 @@ One command runs every check in the containers, and exits non-zero on the first 
 On Windows, run it from Git Bash. The CI workflow ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same
 script. To fix the PHP formatting: `docker compose run --rm app vendor/bin/php-cs-fixer fix`.
 
+### End-to-end test
+
+```bash
+./e2e.sh
+```
+
+MVP criterion 1 in a real browser, only through the UI:
+- a new user registers, creates a project, imports a dataset and two runs ([e2e/fixtures](e2e/fixtures)) and builds
+  a rubric with a manual and an automatic criterion;
+- the user starts a blind evaluation, waits for the checks, scores every answer with the keyboard and closes it;
+- then the user reads the results and the comparison, opens a case and exports the CSV, whose content the test
+  checks;
+- a second, short scenario: an evaluator of a blind, open evaluation sees the results locked;
+- axe-core checks five pages on the way (Projects, Dataset, Rubric editor, Scoring, Compare).
+
+The script starts its own Compose project, `scorewright-e2e`, on ports 8481 and 5481 (`E2E_APP_PORT` and
+`E2E_FRONTEND_PORT` change them), next to the development stack. It runs Playwright in its official image
+([compose.e2e.yaml](compose.e2e.yaml)), so no browser is installed on the host. It removes the stack and its volumes
+at the end, even when a test fails.
+
+It takes a few minutes, most of them for installing the packages in the new volumes. That is why `./check.sh` does not
+run it; the CI workflow runs it as a job of its own.
+
 ## Licence
 
 [MIT](LICENSE)

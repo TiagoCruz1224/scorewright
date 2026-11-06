@@ -1,0 +1,13 @@
+{
+  "name": "scorewright-e2e",
+  "private": true,
+  "type": "module",
+  "description": "MVP criterion 1 end to end, in a real browser (./e2e.sh runs it in Playwright's official image).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "axe-core": "4.14.0"
+  }
+}

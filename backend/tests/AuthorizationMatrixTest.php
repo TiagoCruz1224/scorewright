@@ -79,6 +79,7 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'evaluation_results' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/results', null, [401, 404, 200, 200, 200]],
         'evaluation_comparison' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/comparison?runA={runId}&runB={otherRunId}', null, [401, 404, 200, 200, 200]],
         'evaluation_case' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/cases/{caseId}', null, [401, 404, 200, 200, 200]],
+        'evaluation_export' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/export.csv', null, [401, 404, 200, 200, 200]],
     ];
 
     /**
@@ -100,6 +101,7 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'evaluation_results' => [401, 404, 200, 403, 200],
         'evaluation_comparison' => [401, 404, 200, 403, 200],
         'evaluation_case' => [401, 404, 200, 403, 200],
+        'evaluation_export' => [401, 404, 200, 403, 200],
     ];
 
     /** Every route, not only those under /api: a route added elsewhere must be in the matrix too. */

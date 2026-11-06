@@ -428,9 +428,13 @@ function ScoringItem({ project, evaluation, item }) {
       </div>
 
       <div className="scorebar">
-        <button type="button" className="btn" aria-label="Previous answer" disabled={!item.previousItemId} onClick={goPrevious}>
+        {/*
+          Named by their visible words, not by an aria-label, so what a speech user reads is the name (WCAG 2.5.3); the
+          words stay for screen readers on a phone, where only the icon shows. The keys are aria-keyshortcuts.
+        */}
+        <button type="button" className="btn" disabled={!item.previousItemId} onClick={goPrevious} aria-keyshortcuts="K">
           <Icon name="chev-left" />
-          <span className="hide-sm">Previous</span>
+          <span className="sr-only-sm">Previous</span>
           <span className="kbd" aria-hidden="true">
             K
           </span>
@@ -445,8 +449,8 @@ function ScoringItem({ project, evaluation, item }) {
             <span className="hide-sm"> scored</span>
           </span>
         </div>
-        <button type="button" className="btn btn-primary" aria-label="Next answer with missing scores" onClick={goNext}>
-          Next<span className="hide-sm"> with missing scores</span>
+        <button type="button" className="btn btn-primary" onClick={goNext} aria-keyshortcuts="J">
+          Next<span className="sr-only-sm"> with missing scores</span>
           <span className="kbd" aria-hidden="true">
             J
           </span>

@@ -142,12 +142,12 @@ final class RunTest extends ApiTestCase
     }
 
     /**
-     * Architecture §5, "Run data and blind mode": only the scoring routes and the case page of the results return
-     * answers (the results and the comparison are numbers); no other route does. Every GET route, as the owner, with
-     * two runs whose answers hold a marker and an evaluation of them; a new route with another parameter fails here
-     * until it is added.
+     * Architecture §5, "Run data and blind mode": only the scoring routes and, among the results, the case page and the
+     * export return answers (the results and the comparison are numbers); no other route does. Every GET route, as the
+     * owner, with two runs whose answers hold a marker and an evaluation of them; a new route with another parameter
+     * fails here until it is added. The content is read as sent, so a streamed answer (the export) counts too.
      */
-    public function testOnlyTheScoringRoutesAndTheCasePageReturnAnAnswer(): void
+    public function testOnlyTheScoringRoutesAndTheCaseAndExportReturnAnAnswer(): void
     {
         $client = self::createApiClient();
         $fixture = self::createProjectWithMembers();
@@ -182,17 +182,18 @@ final class RunTest extends ApiTestCase
             $path = strtr($route->getPath(), $placeholders).($queries[$name] ?? '');
             self::assertStringNotContainsString('{', $path, "Route \"$name\" has a parameter this test does not fill");
             $response = self::requestJson($client, 'GET', $path);
-            self::assertSame(200, $response->getStatusCode(), "$name: ".$response->getContent());
-            if (str_contains((string) $response->getContent(), 'answer-text-7b1e')) {
+            $content = $client->getInternalResponse()->getContent();
+            self::assertSame(200, $response->getStatusCode(), "$name: $content");
+            if (str_contains($content, 'answer-text-7b1e')) {
                 $withTheAnswer[] = $name;
             }
             if ('evaluation_case' !== $name) {
-                self::assertStringNotContainsString('"output"', (string) $response->getContent(), $name);
+                self::assertStringNotContainsString('"output"', $content, $name);
             }
             ++$checked;
         }
         self::assertGreaterThanOrEqual(17, $checked, 'Every GET route was checked');
-        self::assertEqualsCanonicalizing(['evaluation_item_next', 'evaluation_item_show', 'evaluation_case'], $withTheAnswer, 'Only the scoring routes and the case page return an answer');
+        self::assertEqualsCanonicalizing(['evaluation_item_next', 'evaluation_item_show', 'evaluation_case', 'evaluation_export'], $withTheAnswer, 'Only the scoring routes, the case page and the export return an answer');
     }
 
     public function testDeletingARunRemovesItsAnswersAndDeletingTheDatasetRemovesItsRuns(): void

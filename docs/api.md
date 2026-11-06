@@ -730,6 +730,39 @@ evaluator never reads an answer with its run while a blind evaluation is open. A
   `criterion`, `a`, `b` and `difference` are the case's first row, its largest; `previousCaseId` and `nextCaseId` are
   the neighbours. `null` too when the case is not listed.
 
+### Export
+
+`GET P/evaluations/{evaluationId}/export.csv` answers `200` with the evaluation's results as a CSV file. Who reads it
+is as for the results: an evaluator gets `403 results_hidden_until_closed` while a blind evaluation is open. It
+returns answers, so it follows the blind rules of the case page.
+
+- **Headers:** `Content-Type: text/csv; charset=utf-8` and `Content-Disposition: attachment`. The file is named after
+  the evaluation, with its letters and digits kept and everything else turned into dashes:
+  `baseline-vs-tuned-results.csv`. There is also an ASCII `filename` for clients that do not read the UTF-8
+  `filename*`.
+- **Format:**
+  - UTF-8 with a byte order mark;
+  - comma-separated, RFC 4180: a cell is in double quotes when it has a comma, a quote, a line break or a space,
+    and a quote inside it is doubled;
+  - lines end with CRLF;
+  - the file is streamed, so its size does not change the server's memory.
+- **One row per answer in the evaluation**, by case position, then by run letter. The columns:
+
+| Column | Holds |
+|---|---|
+| `case_key` | the case's id in the dataset |
+| `tags` | the case's tags, separated by `\|` |
+| `input`, `reference` | the case's text; `reference` is empty when there is none |
+| `run_letter`, `run_label` | the run's letter in the evaluation (A–E) and its label |
+| `output` | the run's answer |
+| one column per criterion, named after it, in the rubric's order | `1`–`5` (a number) for a scale; `pass` or `fail` for pass/fail and automatic checks; `check_error:<code>` when a check could not run (such as `check_error:missing_reference`); empty while there is no score |
+| `comment`, `comment_by` | the answer's comment and the display name of who wrote it last; empty when there is none |
+
+- **Formula injection:** a cell of text that comes from users and starts with `=`, `+`, `-`, `@`, tab or carriage
+  return gets a leading `'`, so a spreadsheet shows it as text and never runs it. That covers the column names taken
+  from the criteria, the case, the run, the answer and the comment. The numbers the app writes (the 1–5 scores) stay
+  numbers, without a prefix.
+
 ### Deleting what an evaluation uses
 
 A dataset, a run or a rubric that an evaluation uses answers `DELETE` with `409 in_use`, listing the evaluations to

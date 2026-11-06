@@ -490,7 +490,7 @@ tag, a per-case comparison and the cases with the largest disagreement.
 - Measured with `app:seed-performance` (148,800 scores): 143 ms in the process; 167 ms for the whole request in a prod-mode
   container with the code copied in (median of 20, p95 about 200 ms). With the code bind-mounted from a Windows disk, as
   in development, every request is slower. From the Windows host the median is 407 ms, because Docker
-  Desktop's port forwarding adds about 250 ms to every request. The CSV export streams the same queries.
+  Desktop's port forwarding adds about 250 ms to every request.
 - **The comparison** of two runs uses the same scan, kept to their scores on the cases both answered (`EXISTS` on the
   other run's answer), so a case one of them skipped weighs on neither side. The largest disagreements are one more
   pass over both runs' scores that puts each (case, criterion)'s two values side by side (`MIN(…) FILTER`), then keeps
@@ -498,8 +498,18 @@ tag, a per-case comparison and the cases with the largest disagreement.
   disagreements when it is opened from a comparison. Measured the same way: the comparison takes 88 ms in the process,
   147 ms for the whole request in the container (p95 193 ms) and 394 ms from the Windows host (p95 477 ms); a case
   page 42, 80 and 313 ms.
-Every cell starting with `=`, `+`, `-`, `@`, tab or carriage return is prefixed with `'` to neutralise formula
-injection.
+- **The CSV export** (`App\Analytics\CsvExport`, `GET …/export.csv`) has one row per answer in the evaluation, with
+  the case, the run, the answer, each criterion's score, the comment and who wrote it (format in
+  [api.md](api.md#export)). It is streamed from a server-side cursor (`DECLARE … CURSOR`, `FETCH 1000`), so PHP's
+  memory stays flat whatever the number of answers. It is UTF-8 with a BOM and follows RFC 4180.
+  - **Formula injection:** every cell of text that comes from users and starts with `=`, `+`, `-`, `@`, tab or carriage
+    return gets a leading `'`, so a spreadsheet shows it as text. The numbers the app writes (1–5 scores) are written as
+    numbers.
+  - Measured with the seed (24,800 answers, a 4.1 MB file), in a prod-mode container:
+    - 757 ms in the process, with PHP's peak memory 2.9 MB above where it started; for 12 answers it is 0.03 MB. The
+      peak is one batch of 1,000 rows at most, whatever the size of the file;
+    - the whole download takes 933 ms in the container and 1.19 s from the Windows host;
+    - PostgreSQL sorts the rows before the first `FETCH`, so the first byte comes after about 0.5 s.
 
 ## 8. Testing strategy
 

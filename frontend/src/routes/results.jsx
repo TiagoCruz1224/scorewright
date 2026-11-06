@@ -72,9 +72,24 @@ export function Results() {
   return (
     <>
       <Breadcrumb items={crumbs(project, { label: evaluation.name, to: evaluationPath(project, evaluation) }, { label: 'Results' })} />
-      <EvaluationHead project={project} evaluation={evaluation} current="Results" />
+      <EvaluationHead project={project} evaluation={evaluation} current="Results" actions={results && <ExportLink project={project} evaluation={evaluation} />} />
       {results ? <ResultsBody project={project} evaluation={evaluation} results={results} /> : <Locked project={project} evaluation={evaluation} />}
     </>
+  );
+}
+
+/**
+ * The results as CSV: a plain link, so the browser downloads the API's attachment (with the session cookie, as any
+ * GET). Only where the results can be read: never on the locked page.
+ */
+export function ExportLink({ project, evaluation }) {
+  return (
+    <div className="actions">
+      <a className="btn" href={`/api/projects/${project.id}/evaluations/${evaluation.id}/export.csv`} download>
+        <Icon name="download" />
+        Export results (CSV)
+      </a>
+    </div>
   );
 }
 

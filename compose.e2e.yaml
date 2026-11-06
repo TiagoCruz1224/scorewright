@@ -1,0 +1,25 @@
+# Playwright for ./e2e.sh, on top of compose.yaml: the end-to-end test of MVP criterion 1 (e2e/). The official
+# image, pinned by version and digest, has the browsers, so nothing is installed on the host.
+services:
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+    # Only with --profile e2e: `docker compose up` never starts it.
+    profiles: [e2e]
+    working_dir: /e2e
+    command: sh -c "npm ci --no-audit --no-fund && npx playwright test"
+    # The browser shares the frontend container's network: it opens http://localhost:5173, the Vite dev server that
+    # forwards /api to Symfony, as a developer does.
+    network_mode: service:frontend
+    # Chromium needs more shared memory than Docker's default; init reaps the browser's child processes.
+    ipc: host
+    init: true
+    environment:
+      CI: ${CI:-}
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    volumes:
+      - ./e2e:/e2e
+      # node_modules stay in the container's volume, not in the working tree.
+      - e2e_node_modules:/e2e/node_modules
+
+volumes:
+  e2e_node_modules:

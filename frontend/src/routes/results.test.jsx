@@ -84,6 +84,8 @@ describe('results', () => {
     screen.getByText(/^6 of 11 answers have every score, so these numbers can still change./);
     expect(screen.getByRole('link', { name: 'close the evaluation' }).getAttribute('href')).toBe('/projects/p1/evaluations/e1');
     expect(within(screen.getByRole('navigation', { name: 'Evaluation' })).getByRole('link', { name: 'Results' }).getAttribute('aria-current')).toBe('page');
+    // The CSV is the API's attachment, downloaded by a plain link.
+    expect(screen.getByRole('link', { name: 'Export results (CSV)' }).getAttribute('href')).toBe('/api/projects/p1/evaluations/e1/export.csv');
   });
 
   it('describes the distribution in a sentence, and shows the chart as a table on request', async () => {
@@ -123,6 +125,7 @@ describe('results', () => {
 
     screen.getByRole('heading', { name: 'Results unlock when the owner closes this evaluation' });
     expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Export results (CSV)' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Continue scoring' }).getAttribute('href')).toBe('/projects/p1/evaluations/e1/score');
   });
 

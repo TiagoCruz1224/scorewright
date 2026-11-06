@@ -110,6 +110,7 @@ describe('compare', () => {
       ['returns-7', 'Correct', 'Can I return opened headphones?', 'Pass', 'Fail', '−100 pts'],
     ]);
     expect(screen.getByRole('link', { name: 'refund-4' }).getAttribute('href')).toBe('/projects/p1/evaluations/e1/cases/c1?runA=run1&runB=run2');
+    expect(screen.getByRole('link', { name: 'Export results (CSV)' }).hasAttribute('download')).toBe(true);
   });
 
   it('shows the API’s error next to the run when the same run is chosen twice', async () => {
@@ -130,6 +131,7 @@ describe('compare', () => {
     screen.getByRole('heading', { name: 'Results unlock when the owner closes this evaluation' });
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.queryByLabelText('Run')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Export results (CSV)' })).toBeNull();
   });
 
   it('has no accessibility violations (axe)', async () => {

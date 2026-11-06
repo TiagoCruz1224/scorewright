@@ -4,7 +4,7 @@ import { ErrorSummary, Field } from '../components/forms.jsx';
 import { Icon } from '../components/icons.jsx';
 import { Breadcrumb, usePageTitle } from '../components/layout.jsx';
 import { crumbs, EvaluationHead, evaluationPath, resultsLocked } from './evaluations.jsx';
-import { Difference, Locked, MEASURES, n, Value } from './results.jsx';
+import { Difference, ExportLink, Locked, MEASURES, n, Value } from './results.jsx';
 import { CheckState } from './scoring.jsx';
 
 /** An answer the API keeps from an evaluator while a blind evaluation is open: the page shows the locked state. */
@@ -46,12 +46,13 @@ export function Compare() {
   const { evaluation, choice, comparison, problem, locked } = useLoaderData();
   const project = useRouteLoaderData('project');
   usePageTitle('Compare', evaluation.name, project.name);
+  const isLocked = locked || resultsLocked(project, evaluation);
 
   return (
     <>
       <Breadcrumb items={crumbs(project, { label: evaluation.name, to: evaluationPath(project, evaluation) }, { label: 'Compare' })} />
-      <EvaluationHead project={project} evaluation={evaluation} current="Compare" />
-      {locked || resultsLocked(project, evaluation) ? (
+      <EvaluationHead project={project} evaluation={evaluation} current="Compare" actions={!isLocked && <ExportLink project={project} evaluation={evaluation} />} />
+      {isLocked ? (
         <Locked project={project} evaluation={evaluation} />
       ) : evaluation.runs.length < 2 ? (
         <div className="empty">

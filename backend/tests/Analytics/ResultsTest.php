@@ -246,17 +246,64 @@ final class ResultsTest extends ApiTestCase
         self::assertProblem(self::requestJson($client, 'GET', self::path($evaluation, '/cases/'.self::caseIds($other)['c1'])), 404, 'not_found');
     }
 
+    /**
+     * One row per answer, case by case and run by run: the case, the run, the answer, each criterion's score (1–5 as a
+     * number, pass or fail, check_error:<code>, empty while not given), the comment and who wrote it.
+     */
+    public function testTheExportHasEveryAnswerWithItsScoresAsCsv(): void
+    {
+        $client = self::createApiClient();
+        $fixture = self::createProjectWithMembers();
+        $evaluation = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: false);
+        $tone = $evaluation->getRubric()->getCriteria()[0];
+        self::service(Connection::class, 'doctrine.dbal.default_connection')->executeStatement('DELETE FROM score WHERE evaluation_item_id = ? AND criterion_id = ?', [self::itemId($evaluation, 'B', 'c2'), $tone->getId()->toRfc4122()]);
+        $client->loginUser($fixture['owner']);
+        // A comment that a spreadsheet would run, with quotes and a line break.
+        $comment = "=HYPERLINK(\"https://example.com\")\nSecond line";
+        self::requestJson($client, 'PUT', self::path($evaluation, '/items/'.self::itemId($evaluation, 'B', 'c1').'/comment'), ['comment' => $comment]);
+
+        $client->request('GET', self::path($evaluation, '/export.csv'));
+
+        $response = $client->getResponse();
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame('text/csv; charset=utf-8', $response->headers->get('Content-Type'));
+        self::assertSame('attachment; filename=results-check-results.csv', $response->headers->get('Content-Disposition'));
+        $csv = $client->getInternalResponse()->getContent();
+        self::assertStringStartsWith("\u{FEFF}case_key,tags,input,reference,run_letter,run_label,output,Tone,Correct,Exact,comment,comment_by\r\n", $csv);
+        // The app's numbers stay numbers; the formula in the comment gets its quote, inside the quoted cell. (PHP's
+        // fputcsv also quotes a cell with a space: RFC 4180 allows quotes around any cell.)
+        self::assertStringContainsString("\r\nc1,billing|refund,\"Input c1\",\"Reference c1\",A,run-A,\"reference c1\",5,pass,pass,,\r\n", $csv);
+        self::assertStringContainsString(",\"'=HYPERLINK(\"\"https://example.com\"\")\nSecond line\",Owner\r\n", $csv);
+
+        $stream = fopen('php://memory', 'w+') ?: throw new \RuntimeException('No memory stream');
+        fwrite($stream, substr($csv, 3));
+        rewind($stream);
+        $rows = [];
+        while (false !== $row = fgetcsv($stream, escape: '')) {
+            $rows[] = $row;
+        }
+        self::assertSame([
+            ['case_key', 'tags', 'input', 'reference', 'run_letter', 'run_label', 'output', 'Tone', 'Correct', 'Exact', 'comment', 'comment_by'],
+            ['c1', 'billing|refund', 'Input c1', 'Reference c1', 'A', 'run-A', 'reference c1', '5', 'pass', 'pass', '', ''],
+            ['c1', 'billing|refund', 'Input c1', 'Reference c1', 'B', 'run-B', 'Nope', '2', 'pass', 'fail', "'$comment", 'Owner'],
+            ['c2', 'billing', 'Input c2', 'Reference c2', 'A', 'run-A', 'Something else', '3', 'fail', 'fail', '', ''],
+            ['c2', 'billing', 'Input c2', 'Reference c2', 'B', 'run-B', 'Reference c2', '', 'pass', 'pass', '', ''],
+            ['c3', '', 'Input c3', '', 'A', 'run-A', 'Anything', '4', 'pass', 'check_error:missing_reference', '', ''],
+        ], $rows);
+    }
+
     public function testAnEvaluatorReadsTheResultsOfABlindEvaluationOnlyOnceItIsClosed(): void
     {
         $client = self::createApiClient();
         $fixture = self::createProjectWithMembers();
         $blind = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: true);
         $open = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: false, name: 'Not blind');
-        // The results, the comparison and a case: each answers 403 to an evaluator while the evaluation is blind and open.
+        // The results, the comparison, a case and the export: each answers 403 to an evaluator while the evaluation is
+        // blind and open.
         $routes = static function (Evaluation $evaluation): array {
             $runs = self::runIds($evaluation);
 
-            return ['/results', "/comparison?runA={$runs['A']}&runB={$runs['B']}", '/cases/'.self::caseIds($evaluation)['c1']];
+            return ['/results', "/comparison?runA={$runs['A']}&runB={$runs['B']}", '/cases/'.self::caseIds($evaluation)['c1'], '/export.csv'];
         };
         $read = static function (string $actor, Evaluation $evaluation) use ($client, $fixture, $routes): array {
             $user = $fixture[$actor];
@@ -270,11 +317,11 @@ final class ResultsTest extends ApiTestCase
         foreach ($routes($blind) as $route) {
             self::assertProblem(self::requestJson($client, 'GET', self::path($blind, $route)), 403, 'results_hidden_until_closed');
         }
-        self::assertSame([[200, 200, 200], [200, 200, 200], [200, 200, 200]], [$read('owner', $blind), $read('viewer', $blind), $read('evaluator', $open)]);
+        self::assertSame([[200, 200, 200, 200], [200, 200, 200, 200], [200, 200, 200, 200]], [$read('owner', $blind), $read('viewer', $blind), $read('evaluator', $open)]);
 
         $client->loginUser($fixture['owner']);
         self::assertSame(200, self::requestJson($client, 'POST', self::path($blind, '/close'))->getStatusCode());
-        self::assertSame([200, 200, 200], $read('evaluator', $blind));
+        self::assertSame([200, 200, 200, 200], $read('evaluator', $blind));
     }
 
     private static function path(Evaluation $evaluation, string $rest): string

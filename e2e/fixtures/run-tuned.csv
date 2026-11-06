@@ -1,0 +1,5 @@
+id,output
+refund-1,"Sorry about that! I can see two charges for order 4182, and I have started a refund for one of them."
+refund-2,"I understand, but I can only refund an order once. Your first refund was approved; shall I check where it is?"
+delivery-1,"Parcel 77-1203 is at the local depot and should arrive on Thursday. Sorry for the wait."
+formula-1,"You paid 3.00 EUR: the payment is in your order history, under Orders. No refund is needed."

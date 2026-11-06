@@ -18,3 +18,14 @@ jobs:
           persist-credentials: false
       # The same containers and command as on a developer machine.
       - run: ./check.sh
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # MVP criterion 1 in a browser: an isolated Compose project and Playwright's official image, pinned by digest
+      # in compose.e2e.yaml. The same script as on a developer machine.
+      - run: ./e2e.sh
