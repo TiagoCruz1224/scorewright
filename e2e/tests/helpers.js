@@ -5,6 +5,26 @@ import { expect } from '@playwright/test';
 const require = createRequire(import.meta.url);
 const axeScript = require.resolve('axe-core/axe.min.js');
 
+/** The demo accounts that app:demo makes (README, "Quick start"): for a local copy only. */
+export const DEMO = { owner: 'demo.owner@example.com', evaluator: 'demo.evaluator@example.com', password: 'scorewright-demo' };
+
+/** Signs in through the sign-in page, then lands on `next`. */
+export async function signIn(page, email, password, next = '/projects') {
+  await page.goto(`/sign-in?next=${encodeURIComponent(next)}`);
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL((url) => url.pathname === next.split('?')[0]);
+}
+
+/** From the projects, through the UI: the project, its evaluations, then the evaluation called `name`. */
+export async function openEvaluation(page, project, name) {
+  await page.getByRole('link', { name: project }).first().click();
+  await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: 'Evaluations' }).click();
+  await page.getByRole('link', { name }).first().click();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+}
+
 /** A file in e2e/fixtures. */
 export const fixture = (name) => fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
 

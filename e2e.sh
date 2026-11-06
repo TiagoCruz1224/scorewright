@@ -2,7 +2,15 @@
 # The end-to-end test of MVP criterion 1 (e2e/, README "End-to-end test"): starts an isolated Compose project with its
 # own name, ports and volumes, runs Playwright in its official image against it, and removes it all at the end, even
 # when a test fails. Used locally (from Git Bash on Windows) and by the CI workflow; ./check.sh does not run it.
+#
+# ./e2e.sh             the tests (e2e/tests)
+# ./e2e.sh screenshots the README's screenshots, made again from the demo data into docs/screenshots
 set -eu
+
+project=chromium
+if [ "${1:-}" = screenshots ]; then
+	project=screenshots
+fi
 
 export COMPOSE_PROJECT_NAME=scorewright-e2e
 export APP_PORT="${E2E_APP_PORT:-8481}" FRONTEND_PORT="${E2E_FRONTEND_PORT:-5481}"
@@ -23,6 +31,8 @@ until curl -fs -o /dev/null "http://localhost:$FRONTEND_PORT/"; do
 	sleep 2
 done
 echo "Stack ready in $(($(date +%s) - start)) s."
+# The demo data (README, "Quick start"): one scenario starts from it, and the screenshots show it.
+compose exec -T app php bin/console app:demo > /dev/null
 
-compose --profile e2e run --rm e2e
-echo "End-to-end test passed in $(($(date +%s) - start)) s (stack included)."
+compose --profile e2e run --rm e2e sh -c "npm ci --no-audit --no-fund && npx playwright test --project=$project"
+echo "End-to-end $project passed in $(($(date +%s) - start)) s (stack included)."

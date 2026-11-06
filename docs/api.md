@@ -4,6 +4,10 @@ The design and the full list of planned endpoints are in [architecture.md](archi
 the endpoints that exist. Every route is also listed in the authorization matrix test
 (`backend/tests/AuthorizationMatrixTest.php`), which fails when a route is missing from it.
 
+**To start the API** (with the app and the demo accounts), follow the [README's Quick start](../README.md#quick-start).
+The API answers on http://localhost:8471, and through the app on http://localhost:5471. To call it from a script, see
+the README's [Accounts and the API](../README.md#accounts-and-the-api).
+
 ## Conventions
 
 - JSON over HTTPS under `/api`, same origin as the SPA. Timestamps are ISO 8601 in UTC.

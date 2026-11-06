@@ -120,14 +120,14 @@ function RunPicker({ evaluation, choice, problem }) {
 function Sentence({ measure, difference, runs }) {
   const [a, b] = runs.map((run) => run.letter);
   if (difference === null) {
-    return <p className="diff diff-zero font-sans whitespace-normal">No scores to compare yet</p>;
+    return <p className="diff diff-zero block font-sans whitespace-normal">No scores to compare yet</p>;
   }
   const rate = measure === 'passRate';
   const rounded = rate ? Math.round(difference) : Math.round(difference * 10) / 10;
   const size = Math.abs(rounded);
   if (rounded === 0) {
     return (
-      <p className="diff diff-zero font-sans whitespace-normal">
+      <p className="diff diff-zero block font-sans whitespace-normal">
         <span aria-hidden="true">=</span> {b} and {a} are level
       </p>
     );
@@ -135,7 +135,7 @@ function Sentence({ measure, difference, runs }) {
   const amount = rate ? `${size} percentage point${size === 1 ? '' : 's'}` : `${size.toFixed(1)} points`;
 
   return (
-    <p className={`diff font-sans whitespace-normal ${rounded > 0 ? 'diff-pos' : 'diff-neg'}`}>
+    <p className={`diff block font-sans whitespace-normal ${rounded > 0 ? 'diff-pos' : 'diff-neg'}`}>
       <span aria-hidden="true">{rounded > 0 ? '▲' : '▼'}</span> {b} is {amount} {rounded > 0 ? 'higher' : 'lower'} than {a}
     </p>
   );

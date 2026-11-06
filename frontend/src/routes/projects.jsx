@@ -68,6 +68,10 @@ export function Projects() {
               Create project
             </Link>
           </div>
+          {/* UX §3.1: on a local copy, the demo data is one command away (README, "Quick start"). */}
+          <p className="small muted">
+            To look around first, load the demo data with <code>docker compose exec app php bin/console app:demo</code>, then sign in as <code>demo.owner@example.com</code>.
+          </p>
         </div>
       )}
       {list.total > 0 && (

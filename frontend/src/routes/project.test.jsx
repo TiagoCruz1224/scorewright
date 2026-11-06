@@ -33,6 +33,15 @@ describe('the start page', () => {
     expect(warn.mock.calls.flat().join(' ')).not.toContain('does not have an element or Component');
     warn.mockRestore();
   });
+
+  it('points a new user without projects to the demo data (UX §3.1)', async () => {
+    await renderApp('/projects', { '/api/me': ME, '/api/projects?page=1': page([]) });
+
+    screen.getByRole('heading', { name: 'Create your first project' });
+    expect(screen.getByText(/To look around first, load the demo data/).textContent).toBe(
+      'To look around first, load the demo data with docker compose exec app php bin/console app:demo, then sign in as demo.owner@example.com.',
+    );
+  });
 });
 
 describe('project pages show only what the role can do (UX §1.5)', () => {

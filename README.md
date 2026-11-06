@@ -1,53 +1,185 @@
 # Scorewright
 
-Scorewright is an open-source web platform for evaluating the answers of AI systems. You collect test cases in
-datasets, import the answers that one or more models gave, score them against explicit criteria (by hand and with
-deterministic automatic checks) and compare models on the same data.
+Scorewright is an open-source web app for evaluating the answers of AI systems. You collect test cases, import the
+answers that each model or prompt gave, and score them against explicit criteria, by hand and with deterministic
+automatic checks. Then you compare the runs on the same data, case by case.
 
-Status: early development. The scope and design are in [docs/requirements.md](docs/requirements.md),
-[docs/architecture.md](docs/architecture.md) and the [architecture decision records](docs/adr/).
+It is for small teams that change a prompt or a model and need to know, with evidence rather than impressions,
+whether the new version is better, and where it is worse.
 
-## Stack
+| Scoring an answer, blind | Results of a closed evaluation |
+|---|---|
+| ![The scoring screen in blind mode: the case, the reference answer, the answer with its run hidden, and the criteria to score with the keyboard](docs/screenshots/scoring-blind.png) | ![Results: the overall score and each criterion per run, with bars, and how often each score was given](docs/screenshots/results.png) |
+| **Comparing two runs** | **The same results in dark mode** |
+| ![Compare: run B against run A, with each difference in words ("B is 2.4 points higher than A" on Tone) and per criterion](docs/screenshots/compare.png) | ![The results page in the dark theme](docs/screenshots/results-dark.png) |
 
-Symfony 7.4 LTS on PHP 8.5 (FrankenPHP), PostgreSQL 18, Symfony Messenger on the Doctrine transport, and a React 19
-single-page app in JavaScript with React Router 8, Tailwind CSS 4 and Vite 8.
+The screenshots show the demo data (below), and `./e2e.sh screenshots` makes them again.
 
-## Run it locally
+## Features
 
-Requirements: Docker with Compose v2 (on Windows, Docker Desktop with the WSL 2 backend). PHP and Node.js on the host
-are not needed: they run in the containers (PHP 8.5, Node.js 26).
+- **Datasets** of test cases, imported from CSV or JSON, in versions that never change, with tags and reference
+  answers. An invalid file is rejected as a whole, with its errors line by line.
+- **Runs:** the answers that one model or prompt gave to a version. A run may leave cases unanswered.
+- **Rubrics:** 1–5 scales and pass/fail criteria with guidance for the people who score, and automatic checks (exact
+  match, contains, does not contain, regex, length, valid JSON), each with a weight.
+- **Evaluations:** in blind mode, the people who score never see which run wrote an answer. Scoring is
+  keyboard-first, saves every score as it is given, and takes a comment per answer. The automatic checks run in
+  background workers, with a time budget.
+- **Results:** averages, pass rates, distributions and a weighted overall score, per run and per tag. Two runs compare
+  per criterion and per tag, with the cases where they disagree most and a page per case. The export is a CSV in
+  which no cell can run as a spreadsheet formula.
+- **Roles:** owners, evaluators and viewers. Every route is tested for every role, and for people outside the project.
+- **Accessible** to WCAG 2.2 AA: the keyboard reaches everything, every chart has a sentence and a table, and there
+  are light and dark themes.
+
+## Quick start
+
+You need Docker with Compose v2: on Windows, Docker Desktop. PHP and Node.js on the host are not needed. In a clone of
+this repository:
 
 ```bash
-docker compose up
+cp .env.example .env
 ```
 
+```bash
+docker compose up -d --wait
+```
+
+```bash
+docker compose exec app php bin/console app:demo
+```
+
+Then open http://localhost:5471 and sign in with one of the demo accounts. They are made by `app:demo`, and are for a
+local copy only: their password is printed here.
+
+| Account | Role | Password |
+|---|---|---|
+| `demo.owner@example.com` | owner: sees and changes everything | `scorewright-demo` |
+| `demo.evaluator@example.com` | evaluator: scores, and sees the blind evaluation's results only once it is closed | `scorewright-demo` |
+| `demo.viewer@example.com` | viewer: reads | `scorewright-demo` |
+
+**How long it takes:** about a minute and a half from the clone to the demo's results, on a machine that already has
+the Docker images: `docker compose up` takes about 45 s (it installs the PHP and npm packages), and `app:demo` about
+6 s. The first time, Docker also downloads about 1.2 GB of images (PostgreSQL, Node.js and FrankenPHP) and builds the
+PHP image, which adds a few minutes.
+
+**The demo project,** "Support assistant (demo)", is the support assistant of a fictional outdoor-gear shop, before and
+after a prompt change. Every case and answer is made up.
+- 50 cases, among them prompt injections, refusals, and 4 cases without a reference answer;
+- `baseline-v1` answers all 50, and `tuned-v2` answers 46;
+- the rubric has a tone scale, a policy pass/fail and three automatic checks;
+- **"Release check"** is closed and fully scored: open its Results and Compare;
+- **"Baseline vs tuned"** is blind and still open, half scored by the owner and the evaluator: sign in as the evaluator
+  and choose Continue scoring.
+
+The demo's files, in [backend/demo](backend/demo), are also examples of the import format
+([docs/api.md](docs/api.md#import-format)). Running `app:demo` again changes nothing. To start again from nothing:
+`docker compose down -v`, then the three commands above. To stop the stack and keep its data: `docker compose down`.
+
+## Architecture
+
+A modular monolith ([ADR 0001](docs/adr/0001-modular-monolith-and-stack.md)): a Symfony API and a React single-page
+app, with PostgreSQL holding the data, the sessions and the job queue.
+
+```mermaid
+flowchart LR
+    browser([Browser]) --> spa["React SPA<br/>(Vite)"]
+    spa -- "/api, JSON" --> api
+    subgraph api ["Symfony API (FrankenPHP)"]
+        direction LR
+        Analytics --> Evaluations --> Datasets --> Projects --> Users
+    end
+    api --> db[("PostgreSQL")]
+    api -- "check jobs" --> queue[["Messenger queue<br/>(in PostgreSQL)"]]
+    queue --> workers["2 workers"]
+    workers --> db
+```
+
+- **The modules** depend one way only, from Analytics (results, comparison, export) down to Users, and a test checks
+  it.
+- **Stack:** Symfony 7.4 LTS on PHP 8.5 (FrankenPHP), Doctrine with PostgreSQL 18, Symfony Messenger on the Doctrine
+  transport. The SPA is React 19 in JavaScript, with React Router 8, Tailwind CSS 4 and Vite 8.
+- **The details:** [docs/architecture.md](docs/architecture.md); the API, route by route, in [docs/api.md](docs/api.md);
+  the scope in [docs/requirements.md](docs/requirements.md).
+- **The decisions:**
+  - [session cookies, not tokens](docs/adr/0002-session-cookie-authentication.md);
+  - [PostgreSQL as the queue too](docs/adr/0003-postgresql-and-doctrine-messenger-transport.md);
+  - [imports that save all or nothing](docs/adr/0004-synchronous-all-or-nothing-imports.md);
+  - [opaque items for blind scoring](docs/adr/0005-evaluation-items-for-blind-scoring.md);
+  - [plain controllers and Problem Details](docs/adr/0006-plain-controllers-and-problem-details.md);
+  - [results computed on read](docs/adr/0007-results-computed-on-read.md).
+
+## Tests and quality
+
+```bash
+./check.sh
+```
+
+```bash
+./e2e.sh
+```
+
+- **`./check.sh`** runs every check in the containers, and fails at the first problem:
+  - the backend: PHP-CS-Fixer, PHPStan at level 8, PHPUnit against PostgreSQL and `composer audit`. The tests include
+    an authorization matrix (every route, for every role and for outsiders), the blind-mode rules and the numbers of
+    the results, worked out by hand;
+  - the frontend: ESLint, the contrast of every colour pair (WCAG AA, both themes), the Vitest tests with axe-core,
+    the production build and `npm audit`.
+- **`./e2e.sh`** runs Playwright in its official image, against a Compose stack of its own that it removes at the end:
+  - MVP criterion 1 through the UI: register, import a dataset and two runs, build a rubric, score every answer with
+    the keyboard, close, compare, open a case and check the CSV;
+  - an evaluator who finds the results locked;
+  - the demo's results and comparison;
+  - axe-core on six of those pages.
+- The [CI workflow](.github/workflows/ci.yml) runs both. Details: [Development](#development).
+
+## Known limits of the MVP
+
+- **No hosted demo:** it runs on your machine, with Docker. Invites add people who already have an account; there is
+  no e-mail.
+- **No locking between evaluators:** two people can score the same answer, and the last save wins.
+- **Blind mode and partial runs:** when only one run answered a case, its answer can only be that run's. The New
+  evaluation form says so when you choose a partial run.
+- **The times in the docs are from a production build**, such as results under 500 ms at the MVP limits (5,000 cases,
+  5 runs). The development stack of the Quick start is several times slower.
+- **Not yet set up for the internet:** trusted proxies and hosts, among other things, come in the last slice of the
+  plan ([architecture §11](docs/architecture.md#11-implementation-plan)).
+
+## Development
+
+### Run it locally
+
+`docker compose up` starts four services:
+- `app`: FrankenPHP serving Symfony;
+- `worker`: two consumers of the job queue, on the same image;
+- `db`: PostgreSQL 18, not published on the host;
+- `frontend`: the Vite dev server.
+
 The first start builds the PHP image and installs the PHP and npm dependencies: a minute or two once the base images
-are downloaded, longer before. Then:
+are downloaded, longer before.
 
 | URL | What |
 |---|---|
 | http://localhost:5471 | The app (Vite dev server; it forwards `/api` to Symfony, so the browser sees one origin) |
 | http://localhost:8471/api/health | The API directly; `{"status":"ok"}` when the API and the database are up |
 
-Services: `app` (FrankenPHP serving Symfony), `worker` (the same image, consuming the Messenger queue), `db`
-(PostgreSQL 18, not published on the host) and `frontend` (Vite).
-
-The host ports are deliberately uncommon (8471 and 5471), so they rarely collide with other local stacks. To change
-them (`APP_PORT`, `FRONTEND_PORT`) or the local passwords, copy `.env.example` to `.env` and edit it; `.env` is ignored
-by Git. Both ports are bound to `127.0.0.1` only, so the stack is not reachable from the local network; the database
-port is not published at all.
+The host ports are deliberately uncommon (8471 and 5471), so they rarely collide with other local stacks.
+- **To change them** (`APP_PORT`, `FRONTEND_PORT`) or the local passwords, edit `.env`. It is a copy of
+  `.env.example`, and Git ignores it.
+- **Both ports are bound to `127.0.0.1` only,** so the stack is not reachable from the local network. The database
+  port is not published at all.
 
 Compose names the stack after the folder (`scorewright` for a clone in `Scorewright/`), and both `docker compose up`
 and `./check.sh` act on that stack and its volumes. To run a second copy next to an existing one, give it its own name
-and ports in its `.env`, for example `COMPOSE_PROJECT_NAME=scorewright2`, `APP_PORT=8481` and `FRONTEND_PORT=5481`.
+and ports in its `.env`, for example `COMPOSE_PROJECT_NAME=scorewright2`, `APP_PORT=8491` and `FRONTEND_PORT=5491`.
 
 After a change to the backend image (`backend/Dockerfile` or `backend/frankenphp/`), run `docker compose up --build`.
 `./check.sh` rebuilds it by itself.
 
-### The first account
+### Accounts and the API
 
-Open http://localhost:5471 and choose **Register**: the app signs you in and shows your projects. People you want to
-invite to a project register the same way first.
+Without the demo, choose **Register** on the sign-in page: the app signs you in and shows your projects. People you
+want to invite to a project register the same way first.
 
 To call the API from outside a browser, send any `csrf-token` value of 24 characters or more with unsafe requests:
 
@@ -61,8 +193,8 @@ it. Browsers still pass the CSRF check, because they also send `Sec-Fetch-Site: 
 
 ### Where the files live
 
-The source code is bind-mounted into the containers, so edits on the host apply at once (PHP on the next request, the
-SPA through Vite's hot reload).
+The source code is bind-mounted into the containers, so edits on the host apply at once: PHP on the next request,
+the SPA through Vite's hot reload.
 
 The dependency and cache directories are **named Docker volumes**, not part of the bind mount: `backend/vendor`,
 `backend/var` and `frontend/node_modules`. Bind mounts from a Windows (or macOS) disk into Linux containers are slow,
@@ -83,13 +215,17 @@ docker compose exec app php bin/console app:seed-performance --no-debug --owner=
 ```
 
 `app:seed-performance` creates a new project, "Performance seed", with data at the MVP limits, to time the results
-(ADR 0007): 5,000 cases with tags, 5 runs (the last one partial), a rubric of 3 manual and 3 automatic criteria with
-weights, and one blind evaluation with every score given, about 150,000. It takes about 10 seconds, writes the same
-data each time, and only runs in the `dev` and `test` environments.
+([ADR 0007](docs/adr/0007-results-computed-on-read.md)). It takes about 10 seconds, writes the same data each time,
+and only runs in the `dev` and `test` environments. The project has:
+- 5,000 cases with tags;
+- 5 runs, the last one partial;
+- a rubric of 3 manual and 3 automatic criteria, with weights;
+- one blind evaluation with every score given: about 150,000.
 
+The options:
 - `--owner` makes an existing user the owner, so the project shows up in their account; without it, the owner is a
-  new user who cannot sign in.
-- `--cases` takes fewer cases (1 to 5,000).
+  new user who cannot sign in;
+- `--cases` takes fewer cases (1 to 5,000);
 - `--no-debug` keeps Doctrine from logging every insert, which in debug mode would not fit in PHP's 128 MB.
 
 Each run adds another project; archive it in its Settings page to hide it from the list.
@@ -99,13 +235,9 @@ Each run adds another project; archive it in its Settings page to hide it from t
 debug mode (`APP_ENV=dev`) with the code on a bind mount, so it is several times slower: on Windows, about 2 s for the
 same results.
 
-## Checks
+### Checks
 
-```bash
-./check.sh
-```
-
-One command runs every check in the containers, and exits non-zero on the first failure:
+`./check.sh` runs every check in the containers, and exits non-zero on the first failure:
 
 - backend (`composer check`): PHP-CS-Fixer, PHPStan (level 8), PHPUnit against PostgreSQL and `composer audit`. The
   tests use a separate `app_test` database in the same `db` server as the development database `app`; the script
@@ -114,28 +246,31 @@ One command runs every check in the containers, and exits non-zero on the first 
   production build, and `npm audit` (any vulnerability in the dependencies that ship to the browser fails; for
   development tooling, high and critical ones fail).
 
-On Windows, run it from Git Bash. The CI workflow ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same
-script. To fix the PHP formatting: `docker compose run --rm app vendor/bin/php-cs-fixer fix`.
+On Windows, run it from Git Bash. The CI workflow runs the same script. To fix the PHP formatting:
+`docker compose run --rm app vendor/bin/php-cs-fixer fix`.
 
 ### End-to-end test
 
-```bash
-./e2e.sh
-```
+`./e2e.sh` runs [e2e/tests](e2e/tests) in a real browser, only through the UI:
+- **MVP criterion 1:**
+  - a new user registers, creates a project, imports a dataset and two runs ([e2e/fixtures](e2e/fixtures)), and
+    builds a rubric with a manual and an automatic criterion;
+  - the user starts a blind evaluation, waits for the checks, scores every answer with the keyboard and closes it;
+  - then the user reads the results and the comparison, opens a case and exports the CSV, whose content the test
+    checks;
+- an evaluator of a blind, open evaluation sees the results locked;
+- the demo owner opens the results and the comparison of the demo's closed evaluation;
+- axe-core checks six pages on the way: Projects, Dataset, Rubric editor, Scoring and Compare, twice.
 
-MVP criterion 1 in a real browser, only through the UI:
-- a new user registers, creates a project, imports a dataset and two runs ([e2e/fixtures](e2e/fixtures)) and builds
-  a rubric with a manual and an automatic criterion;
-- the user starts a blind evaluation, waits for the checks, scores every answer with the keyboard and closes it;
-- then the user reads the results and the comparison, opens a case and exports the CSV, whose content the test
-  checks;
-- a second, short scenario: an evaluator of a blind, open evaluation sees the results locked;
-- axe-core checks five pages on the way (Projects, Dataset, Rubric editor, Scoring, Compare).
+`./e2e.sh screenshots` makes the README's screenshots again, from the demo data, into
+[docs/screenshots](docs/screenshots).
 
-The script starts its own Compose project, `scorewright-e2e`, on ports 8481 and 5481 (`E2E_APP_PORT` and
-`E2E_FRONTEND_PORT` change them), next to the development stack. It runs Playwright in its official image
-([compose.e2e.yaml](compose.e2e.yaml)), so no browser is installed on the host. It removes the stack and its volumes
-at the end, even when a test fails.
+**How it runs:**
+- the script starts its own Compose project, `scorewright-e2e`, on ports 8481 and 5481 (`E2E_APP_PORT` and
+  `E2E_FRONTEND_PORT` change them), next to the development stack, and loads the demo data;
+- it runs Playwright in its official image, pinned by digest in [compose.e2e.yaml](compose.e2e.yaml), so no browser is
+  installed on the host;
+- it removes the stack, its volumes and its images at the end, even when a test fails.
 
 It takes a few minutes, most of them for installing the packages in the new volumes. That is why `./check.sh` does not
 run it; the CI workflow runs it as a job of its own.
