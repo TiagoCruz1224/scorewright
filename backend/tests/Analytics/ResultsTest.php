@@ -94,28 +94,249 @@ final class ResultsTest extends ApiTestCase
         }
     }
 
+    /**
+     * B against A on the cases both answered, c1 and c2: c3, which only A answered, weighs on neither side. So A's Tone
+     * is (5 + 3) / 2 = 4.0 here, and its overall score (2 × 75 + 1 × 50 + 0.5 × 50) / 3.5 = 64.3, not the 69.0 of the
+     * results, where c3 counts too.
+     */
+    public function testTheComparisonIsRightToTheNumber(): void
+    {
+        $client = self::createApiClient();
+        $fixture = self::createProjectWithMembers();
+        $evaluation = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: false);
+        $runs = self::runIds($evaluation);
+        $client->loginUser($fixture['owner']);
+
+        $response = self::requestJson($client, 'GET', self::path($evaluation, "/comparison?runA={$runs['A']}&runB={$runs['B']}"));
+
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $comparison = self::json($response);
+        self::assertSame(['runs', 'cases', 'overall', 'criteria', 'tags', 'disagreements'], array_keys($comparison));
+        self::assertSame([['A', $runs['A'], 'run-A'], ['B', $runs['B'], 'run-B']], array_map(static fn (array $run): array => [$run['letter'], $run['id'], $run['label']], $comparison['runs']));
+        self::assertSame(2, $comparison['cases']);
+        self::assertSame(['a' => 64.3, 'b' => 64.3, 'difference' => 0.0], $comparison['overall']);
+        // B − A in each criterion's units: points on 1–5, percentage points for a rate.
+        self::assertSame([
+            ['Tone', 'mean', [2, 4.0, 0], [2, 3.0, 0], -1.0],
+            ['Correct', 'passRate', [2, 50.0, 0], [2, 100.0, 0], 50.0],
+            ['Exact', 'passRate', [2, 50.0, 0], [2, 50.0, 0], 0.0],
+        ], self::sides($comparison['criteria'], 'name'));
+
+        // Per tag, on the same cases. refund is c1 only: A = (2 × 100 + 100 + 0.5 × 100) / 3.5 = 100.0,
+        // B = (2 × 25 + 100 + 0) / 3.5 = 42.9.
+        self::assertSame([['billing', 2], ['refund', 1]], array_map(static fn (array $tag): array => [$tag['tag'], $tag['cases']], $comparison['tags']));
+        [$billing, $refund] = $comparison['tags'];
+        self::assertSame(['a' => 64.3, 'b' => 64.3, 'difference' => 0.0], $billing['overall']);
+        self::assertSame(['a' => 100.0, 'b' => 42.9, 'difference' => -57.1], $refund['overall']);
+        self::assertSame([
+            [$comparison['criteria'][0]['id'], [1, 5.0, 0], [1, 2.0, 0], -3.0],
+            [$comparison['criteria'][1]['id'], [1, 100.0, 0], [1, 100.0, 0], 0.0],
+            [$comparison['criteria'][2]['id'], [1, 100.0, 0], [1, 0.0, 0], -100.0],
+        ], self::sides($refund['criteria'], 'id'));
+
+        // The pairs that differ, from 0 to 100: a pass against a fail is 100, each point on 1–5 is 25. Ties go by the
+        // case's position, then the criterion's. c1's Correct is the same in both, and c3 has no B.
+        self::assertSame([
+            ['c1', 'Exact', 1, 0, -100, -100],
+            ['c2', 'Correct', 0, 1, 100, 100],
+            ['c2', 'Exact', 0, 1, 100, 100],
+            ['c1', 'Tone', 5, 2, -3, -75],
+            ['c2', 'Tone', 3, 4, 1, 25],
+        ], self::disagreements($comparison));
+        self::assertSame(['Input c1', 1, 'passRate'], [$comparison['disagreements'][0]['case']['input'], $comparison['disagreements'][0]['case']['position'], $comparison['disagreements'][0]['criterion']['measure']]);
+        // Case inputs, but no answer: the answers are on the case page.
+        foreach (array_merge(...array_values(self::OUTPUTS)) as $text) {
+            self::assertStringNotContainsString($text, (string) $response->getContent());
+        }
+
+        // Swapped, every sign turns.
+        $swapped = self::json(self::requestJson($client, 'GET', self::path($evaluation, "/comparison?runA={$runs['B']}&runB={$runs['A']}")));
+        self::assertSame([1.0, -50.0, 0.0], array_column($swapped['criteria'], 'difference'));
+        self::assertSame([100, -100, -100, 75, -25], array_column($swapped['disagreements'], 'normalised'));
+    }
+
+    /** A pair needs a value in both runs: a score not given yet, or a check error, keeps it out, and out of the means. */
+    public function testOnlyPairsScoredInBothRunsAreCompared(): void
+    {
+        $client = self::createApiClient();
+        $fixture = self::createProjectWithMembers();
+        $evaluation = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: false);
+        $runs = self::runIds($evaluation);
+        [$tone, , $exact] = $evaluation->getRubric()->getCriteria();
+        $connection = self::service(Connection::class, 'doctrine.dbal.default_connection');
+        $connection->executeStatement('DELETE FROM score WHERE evaluation_item_id = ? AND criterion_id = ?', [self::itemId($evaluation, 'B', 'c2'), $tone->getId()->toRfc4122()]);
+        $connection->executeStatement("UPDATE score SET outcome = 'check_error', value = NULL, error_code = 'missing_reference' WHERE evaluation_item_id = ? AND criterion_id = ?", [self::itemId($evaluation, 'A', 'c1'), $exact->getId()->toRfc4122()]);
+        $client->loginUser($fixture['owner']);
+
+        $comparison = self::json(self::requestJson($client, 'GET', self::path($evaluation, "/comparison?runA={$runs['A']}&runB={$runs['B']}")));
+
+        self::assertSame([
+            ['Tone', 'mean', [2, 4.0, 0], [1, 2.0, 0], -2.0],
+            ['Correct', 'passRate', [2, 50.0, 0], [2, 100.0, 0], 50.0],
+            ['Exact', 'passRate', [1, 0.0, 1], [2, 50.0, 0], 50.0],
+        ], self::sides($comparison['criteria'], 'name'));
+        self::assertSame([['c2', 'Correct', 0, 1, 100, 100], ['c2', 'Exact', 0, 1, 100, 100], ['c1', 'Tone', 5, 2, -3, -75]], self::disagreements($comparison));
+    }
+
+    public function testTheComparisonNeedsTwoDifferentRunsOfTheEvaluation(): void
+    {
+        $client = self::createApiClient();
+        $fixture = self::createProjectWithMembers();
+        $evaluation = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: false);
+        $other = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: false, name: 'Another');
+        $runs = self::runIds($evaluation);
+        $client->loginUser($fixture['owner']);
+        $errors = static function (string $query) use ($client, $evaluation): array {
+            $response = self::requestJson($client, 'GET', self::path($evaluation, "/comparison$query"));
+            self::assertProblem($response, 422, 'validation_failed');
+
+            return array_map(static fn (array $error): string => "{$error['field']} {$error['code']}", self::json($response)['errors']);
+        };
+
+        self::assertSame(['runA required', 'runB required'], $errors(''));
+        self::assertSame(['runB same_run'], $errors("?runA={$runs['A']}&runB={$runs['A']}"));
+        self::assertSame(['runA not_found'], $errors('?runA='.self::runIds($other)['A']."&runB={$runs['B']}"));
+        self::assertSame(['runA not_found', 'runB required'], $errors('?runA=nope'));
+        // The case page takes both or neither.
+        $response = self::requestJson($client, 'GET', self::path($evaluation, '/cases/'.self::caseIds($evaluation)['c1']."?runA={$runs['A']}"));
+        self::assertProblem($response, 422, 'validation_failed');
+        self::assertSame('runB', self::json($response)['errors'][0]['field']);
+    }
+
+    public function testTheCasePageShowsEveryRunsAnswerWithItsScoresAndComment(): void
+    {
+        $client = self::createApiClient();
+        $fixture = self::createProjectWithMembers();
+        $evaluation = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: false);
+        $other = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: false, name: 'Another');
+        [$runs, $cases] = [self::runIds($evaluation), self::caseIds($evaluation)];
+        $client->loginUser($fixture['owner']);
+        $commented = self::requestJson($client, 'PUT', self::path($evaluation, '/items/'.self::itemId($evaluation, 'B', 'c1').'/comment'), ['comment' => "Wrong.\nNo refund offered."]);
+        self::assertSame(200, $commented->getStatusCode(), (string) $commented->getContent());
+
+        $view = self::json(self::requestJson($client, 'GET', self::path($evaluation, "/cases/{$cases['c1']}")));
+
+        self::assertSame(['case', 'criteria', 'answers', 'disagreement'], array_keys($view));
+        self::assertSame(['id' => $cases['c1'], 'key' => 'c1', 'position' => 1, 'input' => 'Input c1', 'reference' => 'Reference c1', 'tags' => ['billing', 'refund']], $view['case']);
+        self::assertSame(['Tone', 'Correct', 'Exact'], array_column($view['criteria'], 'name'));
+        self::assertSame([
+            ['A', $runs['A'], 'run-A', 'reference c1', [5, 1, 1], null],
+            ['B', $runs['B'], 'run-B', 'Nope', [2, 1, 0], ["Wrong.\nNo refund offered.", 'Owner']],
+        ], array_map(static fn (array $answer): array => [
+            $answer['letter'], $answer['runId'], $answer['label'], $answer['output'], array_column($answer['scores'], 'value'),
+            null === $answer['comment'] ? null : [$answer['comment']['text'], $answer['comment']['by']],
+        ], $view['answers']));
+        self::assertNull($view['disagreement']);
+
+        // c3: only A answered it, and its exact match could not run.
+        $c3 = self::json(self::requestJson($client, 'GET', self::path($evaluation, "/cases/{$cases['c3']}")));
+        self::assertSame(['A'], array_column($c3['answers'], 'letter'));
+        self::assertSame(['criterionId' => $evaluation->getRubric()->getCriteria()[2]->getId()->toRfc4122(), 'value' => null, 'outcome' => 'check_error', 'errorCode' => 'missing_reference'], $c3['answers'][0]['scores'][2]);
+        self::assertNull($c3['case']['reference']);
+
+        // With the pair: the case's place among the disagreements, each case once, in the order of its largest.
+        $pair = "?runA={$runs['A']}&runB={$runs['B']}";
+        $first = self::json(self::requestJson($client, 'GET', self::path($evaluation, "/cases/{$cases['c1']}$pair")))['disagreement'];
+        self::assertSame([1, 2, 'Exact', 1, 0, -100, null, $cases['c2']], [$first['position'], $first['count'], $first['criterion']['name'], $first['a'], $first['b'], $first['difference'], $first['previousCaseId'], $first['nextCaseId']]);
+        $second = self::json(self::requestJson($client, 'GET', self::path($evaluation, "/cases/{$cases['c2']}$pair")))['disagreement'];
+        self::assertSame([2, 2, 'Correct', 0, 1, 100, $cases['c1'], null], [$second['position'], $second['count'], $second['criterion']['name'], $second['a'], $second['b'], $second['difference'], $second['previousCaseId'], $second['nextCaseId']]);
+        self::assertNull(self::json(self::requestJson($client, 'GET', self::path($evaluation, "/cases/{$cases['c3']}$pair")))['disagreement']);
+
+        // A case of another dataset version is not one of this evaluation's.
+        self::assertProblem(self::requestJson($client, 'GET', self::path($evaluation, '/cases/'.self::caseIds($other)['c1'])), 404, 'not_found');
+    }
+
     public function testAnEvaluatorReadsTheResultsOfABlindEvaluationOnlyOnceItIsClosed(): void
     {
         $client = self::createApiClient();
         $fixture = self::createProjectWithMembers();
         $blind = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: true);
         $open = self::scoredEvaluation($fixture['project'], $fixture['owner'], blind: false, name: 'Not blind');
-        $path = "/api/projects/{$fixture['project']->getId()}/evaluations";
-        $read = static function (string $actor, Evaluation $evaluation) use ($client, $fixture, $path): int {
+        // The results, the comparison and a case: each answers 403 to an evaluator while the evaluation is blind and open.
+        $routes = static function (Evaluation $evaluation): array {
+            $runs = self::runIds($evaluation);
+
+            return ['/results', "/comparison?runA={$runs['A']}&runB={$runs['B']}", '/cases/'.self::caseIds($evaluation)['c1']];
+        };
+        $read = static function (string $actor, Evaluation $evaluation) use ($client, $fixture, $routes): array {
             $user = $fixture[$actor];
             self::assertInstanceOf(User::class, $user);
             $client->loginUser($user);
 
-            return self::requestJson($client, 'GET', "$path/{$evaluation->getId()}/results")->getStatusCode();
+            return array_map(static fn (string $route): int => self::requestJson($client, 'GET', self::path($evaluation, $route))->getStatusCode(), $routes($evaluation));
         };
 
         $client->loginUser($fixture['evaluator']);
-        self::assertProblem(self::requestJson($client, 'GET', "$path/{$blind->getId()}/results"), 403, 'results_hidden_until_closed');
-        self::assertSame([200, 200, 200], [$read('owner', $blind), $read('viewer', $blind), $read('evaluator', $open)]);
+        foreach ($routes($blind) as $route) {
+            self::assertProblem(self::requestJson($client, 'GET', self::path($blind, $route)), 403, 'results_hidden_until_closed');
+        }
+        self::assertSame([[200, 200, 200], [200, 200, 200], [200, 200, 200]], [$read('owner', $blind), $read('viewer', $blind), $read('evaluator', $open)]);
 
         $client->loginUser($fixture['owner']);
-        self::assertSame(200, self::requestJson($client, 'POST', "$path/{$blind->getId()}/close")->getStatusCode());
-        self::assertSame(200, $read('evaluator', $blind));
+        self::assertSame(200, self::requestJson($client, 'POST', self::path($blind, '/close'))->getStatusCode());
+        self::assertSame([200, 200, 200], $read('evaluator', $blind));
+    }
+
+    private static function path(Evaluation $evaluation, string $rest): string
+    {
+        return "/api/projects/{$evaluation->getProject()->getId()}/evaluations/{$evaluation->getId()}$rest";
+    }
+
+    /** @return array<string, string> [letter] = run id */
+    private static function runIds(Evaluation $evaluation): array
+    {
+        /** @var array<string, string> $ids */
+        $ids = self::service(Connection::class, 'doctrine.dbal.default_connection')->fetchAllKeyValue('SELECT letter, run_id FROM evaluation_run WHERE evaluation_id = ? ORDER BY letter', [$evaluation->getId()->toRfc4122()]);
+
+        return $ids;
+    }
+
+    /** @return array<string, string> [case key] = case id */
+    private static function caseIds(Evaluation $evaluation): array
+    {
+        /** @var array<string, string> $ids */
+        $ids = self::service(Connection::class, 'doctrine.dbal.default_connection')->fetchAllKeyValue('SELECT case_key, id FROM test_case WHERE dataset_version_id = ?', [$evaluation->getDatasetVersion()->getId()->toRfc4122()]);
+
+        return $ids;
+    }
+
+    private static function itemId(Evaluation $evaluation, string $letter, string $key): string
+    {
+        return (string) self::service(Connection::class, 'doctrine.dbal.default_connection')->fetchOne(
+            'SELECT i.id FROM evaluation_item i JOIN answer a ON a.id = i.answer_id JOIN test_case c ON c.id = a.test_case_id
+            JOIN evaluation_run r ON r.evaluation_id = i.evaluation_id AND r.run_id = a.run_id
+            WHERE i.evaluation_id = ? AND r.letter = ? AND c.case_key = ?',
+            [$evaluation->getId()->toRfc4122(), $letter, $key],
+        );
+    }
+
+    /**
+     * @param list<array<string, mixed>> $criteria
+     *
+     * @return list<list<mixed>> per criterion: its name or id (and measure), A and B as [n, value, check errors], B − A
+     */
+    private static function sides(array $criteria, string $by): array
+    {
+        return array_map(static fn (array $criterion): array => [
+            $criterion[$by],
+            ...('name' === $by ? [$criterion['measure']] : []),
+            [$criterion['a']['n'], $criterion['a']['value'], $criterion['a']['checkErrors']],
+            [$criterion['b']['n'], $criterion['b']['value'], $criterion['b']['checkErrors']],
+            $criterion['difference'],
+        ], $criteria);
+    }
+
+    /**
+     * @param array<string, mixed> $comparison
+     *
+     * @return array<list<mixed>> case key, criterion, A, B, B − A in the criterion's units, and from 0 to 100
+     */
+    private static function disagreements(array $comparison): array
+    {
+        return array_map(
+            static fn (array $row): array => [$row['case']['key'], $row['criterion']['name'], $row['a'], $row['b'], $row['difference'], $row['normalised']],
+            $comparison['disagreements'],
+        );
     }
 
     /** The evaluation above, with every score given as MANUAL says and the automatic checks run. */

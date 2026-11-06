@@ -5,7 +5,7 @@ import { Breadcrumb, usePageTitle } from '../components/layout.jsx';
 import { crumbs, EvaluationHead, evaluationPath, isOwner, ScoreLink } from './evaluations.jsx';
 import { scaleEnds } from './scoring.jsx';
 
-const n = (number) => number.toLocaleString('en');
+export const n = (number) => number.toLocaleString('en');
 const BARS = { A: 'bar bar-a', B: 'bar bar-b' };
 const barClass = (letter) => BARS[letter] ?? 'bar bar-other';
 
@@ -14,10 +14,15 @@ const formatValue = (measure, value) => (measure === 'mean' ? value.toFixed(1) :
 /** From 0 to 1, for a bar: a mean on 1–5, a rate or score on 0–100. */
 const share = (measure, value) => (value === null ? 0 : measure === 'mean' ? value / 5 : value / 100);
 
-/** The difference with its sign written, never the colour alone: "+1.1", "−0.3", "±0.0" (points for a rate). */
-function Difference({ measure, value }) {
-  const rounded = measure === 'mean' ? Math.round(value * 10) / 10 : Math.round(value);
-  const text = measure === 'mean' ? Math.abs(rounded).toFixed(1) : `${Math.abs(rounded)} pts`;
+/**
+ * The difference with its sign written, never the colour alone: "+1.1", "−0.3", "±0.0"; for a rate, whole percentage
+ * points ("+17 pts"). `decimals` is for the rest: 0 for one case's 1–5 scores ("+4").
+ */
+export function Difference({ measure, value, decimals = 1 }) {
+  const rate = measure === 'passRate';
+  const factor = rate ? 1 : 10 ** decimals;
+  const rounded = Math.round(value * factor) / factor;
+  const text = rate ? `${Math.abs(rounded)} pts` : Math.abs(rounded).toFixed(decimals);
   const [sign, className] = rounded > 0 ? ['+', 'diff diff-pos'] : rounded < 0 ? ['−', 'diff diff-neg'] : ['±', 'diff diff-zero'];
 
   return (
@@ -29,7 +34,7 @@ function Difference({ measure, value }) {
 }
 
 /** A value, or a dash that says there is none yet. */
-function Value({ measure, value }) {
+export function Value({ measure, value }) {
   return value === null ? (
     <>
       <span aria-hidden="true">—</span>
@@ -73,7 +78,8 @@ export function Results() {
   );
 }
 
-function Locked({ project, evaluation }) {
+/** For an evaluator while a blind evaluation is open: Results, Compare and Case all show this (UX §4.2). */
+export function Locked({ project, evaluation }) {
   return (
     <div className="empty" style={{ borderStyle: 'solid' }}>
       <span className="empty-icon">
@@ -127,7 +133,7 @@ function Bars({ runs, values, measure }) {
   );
 }
 
-const MEASURES = { mean: 'Average, 1–5', passRate: 'Pass rate' };
+export const MEASURES = { mean: 'Average, 1–5', passRate: 'Pass rate' };
 
 function ResultsBody({ project, evaluation, results }) {
   const { runs, criteria, tags } = results;

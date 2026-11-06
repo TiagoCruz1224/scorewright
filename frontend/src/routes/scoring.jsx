@@ -527,7 +527,7 @@ function ManualCriterion({ criterion, value, onScore }) {
 const CHECK_ERRORS = { missing_reference: 'Error: no reference', regex_error: 'Error: the pattern failed' };
 
 /** An automatic check, read only, in words and with an icon: ✓ Pass, ✗ Fail, Pending, or why it could not run. */
-function CheckState({ score }) {
+export function CheckState({ score }) {
   if (!score) {
     return (
       <span className="state state-pending">

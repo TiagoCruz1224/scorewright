@@ -20,7 +20,8 @@ use Symfony\Component\Security\Http\AccessMapInterface;
  * is not a member, a dataset with one version, a run of that version and a rubric. {projectId} is that project and
  * {userId} its viewer; {nonMemberEmail} is the non-member's email; {datasetId}, {versionId}, {runId} and {rubricId}
  * are the dataset, its version, the run and the rubric. The routes of one evaluation also get an evaluation of that run
- * with that rubric, in each state: {evaluationId}, its {itemId} and the rubric's manual {criterionId}.
+ * with that rubric, in each state: {evaluationId}, its {itemId}, the item's {caseId} and the rubric's manual {criterionId};
+ * when the path has {otherRunId}, the evaluation has a second run of that version.
  */
 final class AuthorizationMatrixTest extends ApiTestCase
 {
@@ -76,6 +77,8 @@ final class AuthorizationMatrixTest extends ApiTestCase
         'evaluation_score' => ['PUT', '/api/projects/{projectId}/evaluations/{evaluationId}/items/{itemId}/scores/{criterionId}', ['value' => 3], [401, 404, 403, 200, 200]],
         'evaluation_comment' => ['PUT', '/api/projects/{projectId}/evaluations/{evaluationId}/items/{itemId}/comment', ['comment' => 'Fine'], [401, 404, 403, 200, 200]],
         'evaluation_results' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/results', null, [401, 404, 200, 200, 200]],
+        'evaluation_comparison' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/comparison?runA={runId}&runB={otherRunId}', null, [401, 404, 200, 200, 200]],
+        'evaluation_case' => ['GET', '/api/projects/{projectId}/evaluations/{evaluationId}/cases/{caseId}', null, [401, 404, 200, 200, 200]],
     ];
 
     /**
@@ -95,6 +98,8 @@ final class AuthorizationMatrixTest extends ApiTestCase
     /** While a blind evaluation is open, an evaluator does not read its results (403 results_hidden_until_closed). */
     private const WHEN_OPEN_AND_BLIND = [
         'evaluation_results' => [401, 404, 200, 403, 200],
+        'evaluation_comparison' => [401, 404, 200, 403, 200],
+        'evaluation_case' => [401, 404, 200, 403, 200],
     ];
 
     /** Every route, not only those under /api: a route added elsewhere must be in the matrix too. */
@@ -107,7 +112,7 @@ final class AuthorizationMatrixTest extends ApiTestCase
         self::assertEqualsCanonicalizing(array_keys(self::MATRIX), array_keys($routes), 'Every route needs an entry in AuthorizationMatrixTest::MATRIX, and only those.');
         foreach ($routes as $name => $route) {
             [$method, $path] = self::MATRIX[$name];
-            self::assertSame($route->getPath(), $path, "Path of route \"$name\"");
+            self::assertSame($route->getPath(), explode('?', $path)[0], "Path of route \"$name\" (without its query)");
             self::assertSame([$method], $route->getMethods(), "Methods of route \"$name\"");
         }
     }
@@ -228,10 +233,14 @@ final class AuthorizationMatrixTest extends ApiTestCase
         ];
         // Only for the routes of one evaluation: an evaluation keeps its rubric, run and dataset from changing.
         if (str_contains($path, '{evaluationId}')) {
-            $evaluation = self::createEvaluation($rubric, [$run], blind: str_contains($state, 'blind'), closed: str_starts_with($state, 'closed'));
+            // The comparison needs a second run.
+            $runs = str_contains($path, '{otherRunId}') ? [$run, $other = self::createRun($version, 'Tuned')] : [$run];
+            $evaluation = self::createEvaluation($rubric, $runs, blind: str_contains($state, 'blind'), closed: str_starts_with($state, 'closed'));
             $item = self::firstItem($evaluation);
             $placeholders += [
                 '{evaluationId}' => $evaluation->getId()->toRfc4122(),
+                '{otherRunId}' => isset($other) ? $other->getId()->toRfc4122() : '',
+                '{caseId}' => $item->getAnswer()->getTestCase()->getId()->toRfc4122(),
                 '{itemId}' => $item->getId()->toRfc4122(),
                 '{criterionId}' => $rubric->getCriteria()[0]->getId()->toRfc4122(), // Tone, a scale_1_5 criterion
             ];

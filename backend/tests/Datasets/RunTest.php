@@ -142,18 +142,20 @@ final class RunTest extends ApiTestCase
     }
 
     /**
-     * Architecture §5, "Run data and blind mode": only the scoring routes return answers (and later the result routes,
-     * which check the blind rules); no other route does. Every GET route, as the owner, with a run whose answer holds a
-     * marker and an evaluation of it; a new route with another parameter fails here until it is added.
+     * Architecture §5, "Run data and blind mode": only the scoring routes and the case page of the results return
+     * answers (the results and the comparison are numbers); no other route does. Every GET route, as the owner, with
+     * two runs whose answers hold a marker and an evaluation of them; a new route with another parameter fails here
+     * until it is added.
      */
-    public function testOnlyTheScoringRoutesReturnAnAnswer(): void
+    public function testOnlyTheScoringRoutesAndTheCasePageReturnAnAnswer(): void
     {
         $client = self::createApiClient();
         $fixture = self::createProjectWithMembers();
         $version = self::createDataset($fixture['project']);
         $run = self::createRun($version, output: 'answer-text-7b1e');
+        $other = self::createRun($version, 'Tuned', output: 'answer-text-7b1e, tuned');
         $rubric = self::createRubric($fixture['project']);
-        $evaluation = self::createEvaluation($rubric, [$run]);
+        $evaluation = self::createEvaluation($rubric, [$run, $other]);
         $item = self::firstItem($evaluation);
         $client->loginUser($fixture['owner']);
         $router = self::getContainer()->get('router');
@@ -167,7 +169,9 @@ final class RunTest extends ApiTestCase
             '{rubricId}' => $rubric->getId()->toRfc4122(),
             '{evaluationId}' => $evaluation->getId()->toRfc4122(),
             '{itemId}' => $item->getId()->toRfc4122(),
+            '{caseId}' => $item->getAnswer()->getTestCase()->getId()->toRfc4122(),
         ];
+        $queries = ['evaluation_comparison' => "?runA={$run->getId()}&runB={$other->getId()}"];
 
         $checked = 0;
         $withTheAnswer = [];
@@ -175,18 +179,20 @@ final class RunTest extends ApiTestCase
             if (!\in_array('GET', $route->getMethods(), true)) {
                 continue;
             }
-            $path = strtr($route->getPath(), $placeholders);
+            $path = strtr($route->getPath(), $placeholders).($queries[$name] ?? '');
             self::assertStringNotContainsString('{', $path, "Route \"$name\" has a parameter this test does not fill");
             $response = self::requestJson($client, 'GET', $path);
             self::assertSame(200, $response->getStatusCode(), "$name: ".$response->getContent());
             if (str_contains((string) $response->getContent(), 'answer-text-7b1e')) {
                 $withTheAnswer[] = $name;
             }
-            self::assertStringNotContainsString('"output"', (string) $response->getContent(), $name);
+            if ('evaluation_case' !== $name) {
+                self::assertStringNotContainsString('"output"', (string) $response->getContent(), $name);
+            }
             ++$checked;
         }
         self::assertGreaterThanOrEqual(17, $checked, 'Every GET route was checked');
-        self::assertEqualsCanonicalizing(['evaluation_item_next', 'evaluation_item_show'], $withTheAnswer, 'Only the scoring routes return an answer');
+        self::assertEqualsCanonicalizing(['evaluation_item_next', 'evaluation_item_show', 'evaluation_case'], $withTheAnswer, 'Only the scoring routes and the case page return an answer');
     }
 
     public function testDeletingARunRemovesItsAnswersAndDeletingTheDatasetRemovesItsRuns(): void

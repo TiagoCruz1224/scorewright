@@ -491,6 +491,13 @@ tag, a per-case comparison and the cases with the largest disagreement.
   container with the code copied in (median of 20, p95 about 200 ms). With the code bind-mounted from a Windows disk, as
   in development, every request is slower. From the Windows host the median is 407 ms, because Docker
   Desktop's port forwarding adds about 250 ms to every request. The CSV export streams the same queries.
+- **The comparison** of two runs uses the same scan, kept to their scores on the cases both answered (`EXISTS` on the
+  other run's answer), so a case one of them skipped weighs on neither side. The largest disagreements are one more
+  pass over both runs' scores that puts each (case, criterion)'s two values side by side (`MIN(…) FILTER`), then keeps
+  the 20 that differ most from 0 to 100. A case page reads its answers, scores and comments in one query, plus the
+  disagreements when it is opened from a comparison. Measured the same way: the comparison takes 88 ms in the process,
+  147 ms for the whole request in the container (p95 193 ms) and 394 ms from the Windows host (p95 477 ms); a case
+  page 42, 80 and 313 ms.
 Every cell starting with `=`, `+`, `-`, `@`, tab or carriage return is prefixed with `'` to neutralise formula
 injection.
 

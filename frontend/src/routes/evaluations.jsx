@@ -482,6 +482,8 @@ export function EvaluationHead({ project, evaluation, current, actions }) {
   const sections = [
     ['Overview', evaluationPath(project, evaluation)],
     ['Results', `${evaluationPath(project, evaluation)}/results`],
+    // Comparing needs two runs.
+    ...(evaluation.runs.length > 1 ? [['Compare', `${evaluationPath(project, evaluation)}/compare`]] : []),
   ];
 
   return (

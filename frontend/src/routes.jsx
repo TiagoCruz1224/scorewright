@@ -28,6 +28,7 @@ import { Members, membersAction, membersLoader } from './routes/members.jsx';
 import { EditRubric, editRubricAction, editRubricLoader, NewRubric, newRubricAction, Rubric, rubricAction, rubricLoader, Rubrics, rubricsLoader } from './routes/rubrics.jsx';
 import { ImportRun, importRunAction, importRunLoader, Run, runAction, runLoader, Runs, runsLoader } from './routes/runs.jsx';
 import { NewProject, newProjectAction, Overview, overviewLoader, ProjectLayout, projectLoader, Projects, projectsLoader } from './routes/projects.jsx';
+import { CaseView, caseLoader, Compare, compareLoader } from './routes/compare.jsx';
 import { Results, resultsLoader } from './routes/results.jsx';
 import { Scoring, scoringLoader, scoringStartLoader } from './routes/scoring.jsx';
 import { Settings, settingsAction } from './routes/settings.jsx';
@@ -78,6 +79,8 @@ export const routes = [
               { path: 'evaluations/new', loader: newEvaluationLoader, action: newEvaluationAction, Component: NewEvaluation },
               { path: 'evaluations/:evaluationId', loader: evaluationLoader, action: evaluationAction, Component: Evaluation },
               { path: 'evaluations/:evaluationId/results', loader: resultsLoader, Component: Results },
+              { path: 'evaluations/:evaluationId/compare', loader: compareLoader, Component: Compare },
+              { path: 'evaluations/:evaluationId/cases/:caseId', loader: caseLoader, Component: CaseView },
               // Scoring stays on the page as it saves (no revalidation): only navigating loads another answer.
               { path: 'evaluations/:evaluationId/score', loader: scoringStartLoader, Component: Scoring },
               { path: 'evaluations/:evaluationId/score/:itemId', loader: scoringLoader, Component: Scoring },
