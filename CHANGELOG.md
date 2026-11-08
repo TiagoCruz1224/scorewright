@@ -27,8 +27,9 @@ its final QA passes.
   the CSV export, safe from spreadsheet formulas.
 - **Accessibility:** WCAG 2.2 AA, checked with axe-core in the unit tests and in a real browser; light and dark themes.
 - **Demo data** (`app:demo`) and data at the MVP limits (`app:seed-performance`), for development.
-- **Production profile:** `compose.prod.yaml` and the `prod` image target, with the built frontend served by Caddy,
-  HTTPS and HSTS when Caddy has a domain name, and configurable trusted proxies and host names.
+- **Production profile:** `compose.prod.yaml` and the `prod` image target, with its own settings file (`.env.prod`),
+  the built frontend served by Caddy, HTTPS and HSTS when Caddy has a domain name, and configurable trusted proxies
+  and host names; `./prod-check.sh` and CI check it.
 - **Security:** CSRF checks on every unsafe request, rate limits on sign-in, registration, invitations and new
   projects, a `__Host-` session cookie, a database role for the app that is no superuser, and the
   [OWASP ASVS 4.0 level 1 checklist](docs/security.md).

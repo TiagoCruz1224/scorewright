@@ -10,6 +10,7 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Log\DebugLoggerInterface;
 use Symfony\Component\Uid\Uuid;
 
 final class AuthTest extends ApiTestCase
@@ -163,6 +164,29 @@ final class AuthTest extends ApiTestCase
 
         self::assertResponseIsSuccessful();
         self::assertSame('fred@example.com', self::json($client->getResponse())['email']);
+    }
+
+    /** Neither the password nor the session id reaches the log, when the login fails or succeeds (ASVS 7.1.1). */
+    public function testTheLogHasNoPasswordAndNoSessionId(): void
+    {
+        $client = self::createApiClient();
+        $client->disableReboot();
+        $password = 'never-in-the-log-'.bin2hex(random_bytes(6));
+        self::register($client, 'quinn@example.com', $password);
+
+        self::assertProblem(self::login($client, 'quinn@example.com', $password.'-but-wrong'), 401, 'invalid_credentials');
+        self::assertSame(200, self::login($client, 'quinn@example.com', $password)->getStatusCode());
+        $sessionId = $client->getResponse()->headers->getCookies()[0]->getValue();
+        $client->request('GET', '/api/me');
+        self::assertResponseIsSuccessful();
+
+        $logger = $client->getContainer()->get('logger');
+        self::assertInstanceOf(DebugLoggerInterface::class, $logger);
+        $logs = (string) json_encode($logger->getLogs());
+        self::assertNotSame([], $logger->getLogs(), 'The requests were logged');
+        self::assertNotEmpty($sessionId);
+        self::assertStringNotContainsString($password, $logs);
+        self::assertStringNotContainsString((string) $sessionId, $logs);
     }
 
     public function testLoginReplacesASessionIdPlantedBeforehand(): void

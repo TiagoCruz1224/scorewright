@@ -1,5 +1,6 @@
-# Local overrides for compose.yaml (copy .env.example)
+# Local overrides for compose.yaml (copy .env.example), and the production profile's settings (copy .env.prod.example)
 /.env
+/.env.prod
 
 /frontend/node_modules/
 /frontend/dist/

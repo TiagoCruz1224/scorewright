@@ -510,9 +510,11 @@ tag, a per-case comparison and the cases with the largest disagreement.
 - `App\Analytics\Results` does it in one scan of the evaluation's scores, grouped by the case's tags (a few dozen
   combinations), criterion, run, outcome and value, plus one query for the coverage. These reads run in a transaction
   that lowers PostgreSQL's parallel-query thresholds (`set_config(…, true)`), so the scan uses parallel workers.
-- **Measured with the production profile** (`compose.prod.yaml`, 2026-11-06) and `app:seed-performance` (148,800
-  scores), median of 20 requests: 170 ms for the whole request inside the `app` container (p95 184 ms), 182 ms from
-  the Windows host (p95 217 ms). From the host, use `127.0.0.1`: with `localhost`, curl and some clients try IPv6
+- **Measured with the production profile** (`compose.prod.yaml`) and `app:seed-performance` (148,800 scores), on a
+  laptop shared with other stacks: **under 500 ms**. The median of 20 requests for the whole request was 170–362 ms
+  over three rounds (2026-11-06, and two by QA in SWQ4), inside the `app` container and from the Windows host alike;
+  the worst p95 was 416 ms from the host and 582 ms once inside the container, with another job using the CPU. From
+  the host, use `127.0.0.1`: with `localhost`, curl and some clients try IPv6
   (`::1`) first, where nothing listens, and on Windows that costs about 250 ms per new connection. (Slice 12 took
   that for the cost of Docker Desktop's port forwarding; it is about 10 ms.) The development stack, in debug mode with
   the code on a bind mount, is several times slower.
@@ -520,8 +522,8 @@ tag, a per-case comparison and the cases with the largest disagreement.
   other run's answer), so a case one of them skipped weighs on neither side. The largest disagreements are one more
   pass over both runs' scores that puts each (case, criterion)'s two values side by side (`MIN(…) FILTER`), then keeps
   the 20 that differ most from 0 to 100. A case page reads its answers, scores and comments in one query, plus the
-  disagreements when it is opened from a comparison. Measured the same way: the comparison takes 137 ms in the container (p95
-  167 ms) and 157 ms from the host (p95 214 ms); a case page 75 and 89 ms.
+  disagreements when it is opened from a comparison. Measured the same way (medians over the three rounds): the comparison
+  137–255 ms, a case page 75–89 ms.
 - **The CSV export** (`App\Analytics\CsvExport`, `GET …/export.csv`) has one row per answer in the evaluation, with
   the case, the run, the answer, each criterion's score, the comment and who wrote it (format in
   [api.md](api.md#export)). It is streamed from a server-side cursor (`DECLARE … CURSOR`, `FETCH 1000`), so PHP's
@@ -532,8 +534,7 @@ tag, a per-case comparison and the cases with the largest disagreement.
   - Measured with the seed (24,800 answers, a 4.1 MB file):
     - in slice 14, in a prod-mode container: 757 ms in the process, with PHP's peak memory 2.9 MB above where it
       started; for 12 answers it is 0.03 MB. The peak is one batch of 1,000 rows at most, whatever the size of the file;
-    - with the production profile, the whole download takes 919 ms in the container and 958 ms from the Windows host
-      (median of 5);
+    - with the production profile, the whole download takes 0.6–1 s (median of 5 requests, over the three rounds);
     - PostgreSQL sorts the rows before the first `FETCH`, so the first byte comes after about 0.5 s.
 
 ## 8. Testing strategy
@@ -601,10 +602,13 @@ test of each, and lists what is left for after the MVP. The concrete rules for t
 - **The database:** the app and the workers connect as `app_runtime`, which may read and write rows and nothing more
   (no superuser, owns nothing; `app:database-role`). The migrations run as the owner, from the `app` container's
   entrypoint, which keeps the owner's URL from the server it starts. When the database cannot be reached, every
-  route answers `503 database_unavailable` with `Retry-After`.
-- **Secrets:** `.env.example` holds placeholders only; real values come from environment variables, and the
-  production image refuses to start with the placeholders. CI fails if `composer audit` reports a known
-  vulnerability.
+  route answers `503 database_unavailable` with `Retry-After`, the health check included, and soon: connecting gives
+  up after 2 s (`PDO::ATTR_TIMEOUT`, for Doctrine and the session handler), and in the production profile the name
+  `db` of a stopped database stops resolving after 1 s (`dns_opt`). A signed-in request with the database stopped
+  answers in about 2 s, login and health in about 1 s.
+- **Secrets:** `.env.example` (development) holds placeholders only; the production profile reads `.env.prod`, whose
+  example has empty secrets: Compose refuses to start anything until they are set, and the image refuses the
+  development placeholders. CI fails if `composer audit` reports a known vulnerability.
 - **Denial of service:** the body, import, field and job limits above, list pagination capped at 100 per page and
   10,000 pages, and the rate limits on login, registration, invites and project creation.
 

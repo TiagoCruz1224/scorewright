@@ -15,14 +15,14 @@ the README's [Accounts and the API](../README.md#accounts-and-the-api).
 - **Session:** signing in sets the session cookie `__Host-scorewright` (`HttpOnly`, `Secure`, `SameSite=Lax`,
   `Path=/`, no `Domain`): a browser keeps it only from a secure origin, which `http://localhost` counts as in Chromium and Firefox (not in Safari). The
   session is stored in PostgreSQL and ends after 8 hours without a request, or at logout.
-  - **From a script:** curl does not keep a `__Host-` cookie over plain HTTP, even on localhost; send it back
-    yourself (`-H "Cookie: __Host-scorewright=…"`, from the `Set-Cookie` of the login), or use HTTPS.
+  - **From a script:** keep the cookie between requests, for example with curl's cookie jar (`-c jar -b jar`).
 - **CSRF:** every `POST`, `PUT`, `PATCH` and `DELETE` needs a `csrf-token` header with a random value of at least 24
   characters (the SPA generates one per page load). A request without it, or whose `Origin`, `Referer` or
   `Sec-Fetch-Site` header shows another site, or with `Origin: null`, answers `403 csrf_failed`. Login and register
   are covered too. The origin is compared with the `Host` the client sent: the Vite proxy (port 5471) and Caddy in
   production pass it on unchanged.
-- **Host:** a `Host` that is not one of the configured host names answers `400` (`SYMFONY_TRUSTED_HOSTS`: in
+- **Host:** the API answers `400` to a `Host` that is not one of the configured host names (the frontend's static files
+  do not check it) (`SYMFONY_TRUSTED_HOSTS`: in
   development `localhost` and `127.0.0.1`; see the README's [Production](../README.md#production)).
 - **Request bodies** are JSON only: send `Content-Type: application/json`, otherwise the answer is
   `415 unsupported_media_type`. A body larger than 6 MiB answers `413 payload_too_large` (Problem Details, like every
@@ -79,7 +79,8 @@ the README's [Accounts and the API](../README.md#accounts-and-the-api).
 
 ### `GET /api/health`
 
-Public. `200 {"status":"ok"}` when the API can reach the database, otherwise `503 database_unavailable`.
+Public. `200 {"status":"ok"}` when the API can reach the database, otherwise `503 database_unavailable` with
+`Retry-After`.
 
 ### `POST /api/auth/register`
 
@@ -636,7 +637,7 @@ The same item **not in blind mode** has one more field, after `answer`:
   results_hidden_until_closed`, so nobody scoring a blind evaluation learns which run does better. Once it is closed,
   or when it is not blind, evaluators read them too.
 - **Time:** under 500 ms at the MVP limits (`app:seed-performance`: 5,000 cases, 5 runs, about 150,000 scores) with the
-  production profile (170 ms), as measured in [architecture §7](architecture.md#7-background-jobs-and-automatic-checks). The
+  production profile: about 170–360 ms (median, from `127.0.0.1`), as measured in [architecture §7](architecture.md#7-background-jobs-and-automatic-checks). The
   development stack of the README (`APP_ENV=dev`, debug on, the code on a bind mount) is several times slower: about
   2 s for the same results on Windows.
 

@@ -9,7 +9,7 @@ if [ "$1" = 'frankenphp' ]; then
 		for value in "$APP_SECRET" "$DATABASE_URL" "$DATABASE_OWNER_URL"; do
 			case "$value" in
 				'' | *'!ChangeMe!'*)
-					echo 'Set APP_SECRET, POSTGRES_PASSWORD and APP_DATABASE_PASSWORD to your own values (README, "Production").' >&2
+					echo 'Refusing to start: a secret is empty or a !ChangeMe! placeholder. Set PROD_APP_SECRET, PROD_POSTGRES_PASSWORD and PROD_APP_DATABASE_PASSWORD in .env.prod to your own values (README, "Production").' >&2
 					exit 1
 					;;
 			esac

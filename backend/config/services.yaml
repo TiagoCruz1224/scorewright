@@ -33,7 +33,9 @@ services:
     Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler:
         arguments:
             - '%env(DATABASE_URL)%'
-            - { lock_mode: !php/const Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler::LOCK_NONE }
+            - lock_mode: !php/const Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler::LOCK_NONE
+              # As Doctrine's connection (doctrine.yaml): at most 2 s to connect.
+              db_connection_options: { !php/const PDO::ATTR_TIMEOUT: 2 }
 
 when@test:
     services:

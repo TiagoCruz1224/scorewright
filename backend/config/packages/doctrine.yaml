@@ -1,6 +1,11 @@
 doctrine:
     dbal:
         url: '%env(resolve:DATABASE_URL)%'
+        # At most 2 s to connect (pdo_pgsql's connect_timeout, which it sets itself: a connect_timeout in the URL does
+        # not reach it), so a database that does not answer gives a 503 quickly (SWQ4-08). The session handler too
+        # (services.yaml).
+        options:
+            !php/const PDO::ATTR_TIMEOUT: 2
 
         # IMPORTANT: You MUST configure your server version,
         # either here or in the DATABASE_URL env var (see .env file)

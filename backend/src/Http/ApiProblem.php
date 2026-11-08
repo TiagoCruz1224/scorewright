@@ -45,6 +45,12 @@ final class ApiProblem extends \RuntimeException implements HttpExceptionInterfa
         return new self(409, 'in_use', 'Evaluations use it: delete them first', ['evaluations' => $evaluations]);
     }
 
+    /** 503 with Retry-After: the database is down or restarting (any route, the health check included). */
+    public static function databaseUnavailable(): self
+    {
+        return new self(503, 'database_unavailable', 'The database is not reachable. Try again in a moment', [], ['Retry-After' => '10']);
+    }
+
     /** 429 with Retry-After: the number of seconds until the rate limiter accepts the next attempt. */
     public static function tooManyRequests(string $problemCode, string $title, \DateTimeInterface $retryAt): self
     {

@@ -47,13 +47,13 @@ authentication) are grouped as ➖ in one row.
 | 3.1.1 | No session token in URLs | ✅ | The session is a cookie only | `Users/AuthTest::testTheSessionCookieIsSecureHttpOnlySameSiteLaxAndExpiresAfterEightIdleHours` |
 | 3.2.1 | A new session token at sign-in | ✅ | Symfony's session migration on login; a planted id is replaced | `Users/AuthTest::testLoginReplacesASessionIdPlantedBeforehand` |
 | 3.2.2 | At least 64 bits of entropy | ✅ | PHP's session ids: 32 hexadecimal characters, 128 bits | Prod profile (the `Set-Cookie` of a login) |
-| 3.2.3 | Tokens kept in the browser in a safe way | ✅ | An `HttpOnly` cookie; nothing in `localStorage` but the theme and the shortcut setting | `Users/AuthTest::testTheSessionCookieIs…` |
-| 3.3.1 | Logout and expiry end the session | ✅ | Logout invalidates the session on the server; 8 hours idle ends it | `Users/AuthTest::testLogoutEndsTheSession`, `testTheSessionCookieIs…` (8 h) |
+| 3.2.3 | Tokens kept in the browser in a safe way | ✅ | An `HttpOnly` cookie; nothing in `localStorage` but the theme and the shortcut setting | `Users/AuthTest::testTheSessionCookieIsSecureHttpOnlySameSiteLaxAndExpiresAfterEightIdleHours` |
+| 3.3.1 | Logout and expiry end the session | ✅ | Logout invalidates the session on the server; 8 hours idle ends it | `Users/AuthTest::testLogoutEndsTheSession`, `testTheSessionCookieIsSecureHttpOnlySameSiteLaxAndExpiresAfterEightIdleHours` (8 h) |
 | 3.3.2 | Re-authentication at least every 30 days, also when in use | ⏳ | Sessions end after 8 idle hours, but a session in constant use has no absolute limit yet. Planned: end sessions 30 days after sign-in. | — |
-| 3.4.1 | `Secure` cookie | ✅ | `cookie_secure: true` | `Users/AuthTest::testTheSessionCookieIs…`; `e2e/tests/mvp.spec.js` |
+| 3.4.1 | `Secure` cookie | ✅ | `cookie_secure: true` | `Users/AuthTest::testTheSessionCookieIsSecureHttpOnlySameSiteLaxAndExpiresAfterEightIdleHours`; `e2e/tests/mvp.spec.js` |
 | 3.4.2 | `HttpOnly` cookie | ✅ | `cookie_httponly: true` | The same tests |
 | 3.4.3 | `SameSite` cookie | ✅ | `SameSite=Lax`, with the CSRF checks of 4.2.2 | The same tests |
-| 3.4.4 | `__Host-` prefix | ✅ | The cookie is `__Host-scorewright`, with `Path=/` and no `Domain`. Chromium and Firefox accept it on `http://localhost`, a secure context, so development works there; WebKit (Safari) keeps no `Secure` cookie over plain HTTP, prefix or not (README). | `Users/AuthTest::testTheSessionCookieIs…` (name, path, no domain); `e2e/tests/mvp.spec.js` (the cookie Chromium keeps) |
+| 3.4.4 | `__Host-` prefix | ✅ | The cookie is `__Host-scorewright`, with `Path=/` and no `Domain`. Chromium and Firefox accept it on `http://localhost`, a secure context, so development works there; WebKit (Safari) keeps no `Secure` cookie over plain HTTP, prefix or not (README). | `Users/AuthTest::testTheSessionCookieIsSecureHttpOnlySameSiteLaxAndExpiresAfterEightIdleHours` (name, path, no domain); `e2e/tests/mvp.spec.js` (the cookie Chromium keeps) |
 | 3.4.5 | `Path` as narrow as possible when the host is shared | ✅ | `Path=/`: Scorewright owns its host name (the `__Host-` prefix demands it) | As 3.4.4 |
 | 3.7.1 | A valid session before sensitive actions | ✅ | Every route but health, register and login needs a signed-in user; every write also needs the right role | `AuthorizationMatrixTest::testEveryPathButThePublicOnesNeedsASignedInUser`, `testRouteAnswersTheExpectedStatusForEachActor` |
 
@@ -82,7 +82,7 @@ authentication) are grouped as ➖ in one row.
 | 5.2.1 | HTML from editors sanitized | ➖ | No input is HTML; every text is shown as text | — |
 | 5.2.2 | Unstructured data sanitized | ✅ | Lengths, control characters and UTF-8 checked; answers kept as given and only ever shown as text | `Datasets/CaseFileReaderTest::testTooLongAtOneCharacterOverEachLimit` |
 | 5.2.3 | Input to mail systems | ➖ | The app sends no email | — |
-| 5.2.4 | No `eval()` or dynamic code | ✅ | None in PHP or JavaScript; the regex check runs user patterns with PCRE's backtrack limit and a time budget | `Evaluations/ChecksTest::testCatastrophicBacktrackingIsARegexErrorInMilliseconds` |
+| 5.2.4 | No `eval()` or dynamic code | ✅ | None in PHP or JavaScript; the regex check runs user patterns with PCRE's backtrack limit and a time budget | `Evaluations/ChecksTest::testCatastrophicBacktrackingIsARegexErrorInMilliseconds` (the limit); `Evaluations/CheckJobTest::testAJobPastItsTimeBudgetLeavesTheRestAsCheckErrors`, `Evaluations/CheckJobTest::testACriterionPastItsTimeBudgetStopsForTheItemsLeft` (the budget) |
 | 5.2.5 | Template injection | ➖ | No server-side templates: the API returns JSON | — |
 | 5.2.6 | SSRF | ➖ | The app makes no outgoing requests | — |
 | 5.2.7 | SVG content | ➖ | No SVG uploads; the icons are part of the build | — |
@@ -109,7 +109,7 @@ authentication) are grouped as ➖ in one row.
 
 | # | Requirement (short) | | How | Test |
 |---|---|---|---|---|
-| 7.1.1 | No credentials or session tokens in logs | ✅ | Nothing logs a request body or a cookie; Symfony logs the exception class, message and route | `Datasets/DatasetTest::testExcerptsAreNeverLogged` (the logger of the tests keeps every level) |
+| 7.1.1 | No credentials or session tokens in logs | ✅ | Nothing logs a request body or a cookie; Symfony logs the exception class, message and route | `Users/AuthTest::testTheLogHasNoPasswordAndNoSessionId` (a failed and a successful login, then a signed-in request: neither the password nor the session id is in the log, which in the tests keeps every level) |
 | 7.1.2 | No other sensitive data in logs | ✅ | Cases, answers, comments and import excerpts never go into a log message | The same test |
 | 7.4.1 | A generic message on unexpected errors | ✅ | `500 internal_error` with a fixed title; `503 database_unavailable` when the database cannot be reached; never a stack trace, also in development | `Http/HttpTest::testUnknownPathsAnswerProblemDetailsNeverADebugPage`, `Http/ProblemDetailsListenerTest`, `Controller/HealthControllerTest` |
 
@@ -183,11 +183,11 @@ authentication) are grouped as ➖ in one row.
 | 14.2.2 | No unneeded features, samples or docs in production | ✅ | The `prod` image has no dev dependencies, tests or Vite server; `app:demo` and `app:seed-performance` refuse to run in `prod` | `Analytics/DemoCommandTest::testItRefusesToRunOutsideDevAndTest`, `Analytics/SeedPerformanceCommandTest::testItRefusesToRunOutsideDevAndTest`; prod profile |
 | 14.2.3 | Subresource integrity for assets on a CDN | ➖ | No CDN: every asset is served by the app | — |
 | 14.3.2 | Debug modes off in production | ✅ | `APP_ENV=prod` in the image; `display_errors = Off` everywhere | Prod profile (`APP_ENV`, the ini values) |
-| 14.3.3 | No version details in headers | ✅ | Caddy drops `Server`; `expose_php = Off` | Prod profile |
+| 14.3.3 | No version details in headers | ✅ | Caddy drops `Server`, on its own error responses too (`handle_errors`); `expose_php = Off` | Prod profile (`prod-check.sh`: a missing asset) |
 | 14.4.1 | `Content-Type` with a safe character set on every response | ✅ | `application/json` and `application/problem+json` (UTF-8 by definition, RFC 8259), `text/html; charset=utf-8`, `text/csv; charset=utf-8` | Prod profile; the export test |
 | 14.4.2 | API responses carry `Content-Disposition: attachment` | ✅ | `App\Http\NoStoreListener` | `Http/HttpTest::testResponsesAreNeverStored` |
 | 14.4.3 | A Content Security Policy | ✅ | `default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'` on the frontend in production (`Caddyfile.prod`); the API's responses have one too | Prod profile; the e2e test runs the app under Vite, which sends none |
-| 14.4.4 | `X-Content-Type-Options: nosniff` | ✅ | Caddy, on every response | Prod profile |
+| 14.4.4 | `X-Content-Type-Options: nosniff` | ✅ | Caddy, on every response, its own errors included | Prod profile (`prod-check.sh`: a missing asset) |
 | 14.4.5 | HSTS, with subdomains | ✅ | `Strict-Transport-Security: max-age=31536000; includeSubDomains` on every HTTPS response from Caddy; behind a TLS proxy, the proxy sends it (README) | Prod profile with `SERVER_NAME` |
 | 14.4.6 | A `Referrer-Policy` | ✅ | `same-origin` | Prod profile |
 | 14.4.7 | Not embeddable by other sites | ✅ | CSP `frame-ancestors 'none'` | Prod profile |
@@ -206,10 +206,12 @@ The ⏳ rows above, in the order they would be done:
 
 ## How this was checked
 
-- The tests listed above run in `./check.sh`, `./e2e.sh` and CI.
-- "Prod profile": `docker compose -f compose.prod.yaml up -d --build --wait` with secrets of its own, then `curl`
-  against `http://localhost:8490`: the headers of `/`, an asset and `/api/*`; `/api/unknown` (`404` Problem Details,
-  never `index.html`); a missing asset (`404`, not cached); a `Host` outside `SYMFONY_TRUSTED_HOSTS` (`400`); the
-  session cookie of a login; and `/api/me`, login and health with the database stopped (`503 database_unavailable`).
-  With `SERVER_NAME=localhost` and port 443 published: `http://` redirects to `https://`, and the HTTPS responses
-  carry HSTS.
+- The tests listed above run in `./check.sh`, `./e2e.sh` and CI. `./prod-check.sh` (also in CI) builds and starts
+  the production profile and checks its answers, the headers of Caddy's own errors and the refusal of empty or
+  placeholder secrets.
+- "Prod profile": `docker compose -f compose.prod.yaml --env-file .env.prod up -d --build --wait`, then `curl`
+  against `http://127.0.0.1:8490`: the headers of `/`, an asset, `/api/*` and Caddy's errors (a missing asset, a
+  `POST /`); `/api/unknown` (`404` Problem Details, never `index.html`); a `Host` outside `SYMFONY_TRUSTED_HOSTS`
+  (`400` from the API); the session cookie of a login; and `/api/me`, login and health with the database stopped
+  (`503 database_unavailable` with `Retry-After`, in 1 to 2 s). With `SERVER_NAME=localhost` and port 443 published:
+  `http://` redirects to `https://`, and the HTTPS responses, errors included, carry HSTS.

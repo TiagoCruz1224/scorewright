@@ -18,7 +18,7 @@ final class HealthController
         try {
             $connection->executeQuery('SELECT 1');
         } catch (DBALException) {
-            return (new ApiProblem(503, 'database_unavailable', 'The database is not reachable'))->toResponse();
+            return ApiProblem::databaseUnavailable()->toResponse();
         }
 
         return new JsonResponse(['status' => 'ok']);

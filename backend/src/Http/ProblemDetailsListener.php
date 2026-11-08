@@ -50,7 +50,7 @@ final class ProblemDetailsListener
 
         // The database is down or restarting (SWQ1-13): 503, to try again later, on any route (/api/me and login too).
         if (self::databaseUnavailable($exception)) {
-            return new ApiProblem(503, 'database_unavailable', 'The database is not reachable. Try again in a moment', [], ['Retry-After' => '10']);
+            return ApiProblem::databaseUnavailable();
         }
 
         // allow_extra_attributes: false makes the serializer throw this for unknown request fields.

@@ -30,5 +30,7 @@ final class HealthControllerTest extends WebTestCase
         self::assertSame(503, $response->getStatusCode());
         self::assertSame('application/problem+json', $response->headers->get('Content-Type'));
         self::assertStringContainsString('"code":"database_unavailable"', (string) $response->getContent());
+        // As on every other route (SWQ4-08).
+        self::assertSame('10', $response->headers->get('Retry-After'));
     }
 }
