@@ -30,16 +30,20 @@ services:
     environment:
       <<: *backend-env
       DATABASE_OWNER_URL: postgresql://app:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/app?serverVersion=18&charset=utf8
-      # A domain name: Caddy gets a certificate and serves HTTPS on ports 80 and 443 (publish them). Unset: plain HTTP
-      # on port 80, for a proxy in front that terminates TLS.
+      # A domain name: Caddy gets a certificate and serves HTTPS on ports 80 and 443, which you then publish (README,
+      # "Production"). Unset: plain HTTP on port 80, for a proxy in front that terminates TLS.
       SERVER_NAME: ${SERVER_NAME:-:80}
     depends_on:
       db:
         condition: service_healthy
     ports:
       - 127.0.0.1:${PROD_PORT:-8490}:80
+    # Caddy's certificates and its local CA, kept when the container is recreated.
+    volumes:
+      - caddy_data:/data
+    # The health listener on the loopback (Caddyfile.prod): no public host name, no TLS, so it works in every mode.
     healthcheck:
-      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://localhost/api/health') === false ? 1 : 0);"]
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:2020/api/health') === false ? 1 : 0);"]
       start_period: 2m
       start_interval: 2s
       interval: 30s
@@ -71,3 +75,4 @@ services:
 
 volumes:
   db_data:
+  caddy_data:

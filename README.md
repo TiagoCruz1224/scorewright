@@ -119,6 +119,10 @@ flowchart LR
 ./e2e.sh
 ```
 
+```bash
+./prod-check.sh
+```
+
 - **`./check.sh`** runs every check in the containers, and fails at the first problem:
   - the backend: PHP-CS-Fixer, PHPStan at level 8, PHPUnit against PostgreSQL and `composer audit`. The tests include
     an authorization matrix (every route, for every role and for outsiders), the blind-mode rules, the numbers of
@@ -131,7 +135,11 @@ flowchart LR
   - an evaluator who finds the results locked;
   - the demo's results and comparison;
   - axe-core on six of those pages.
-- The [CI workflow](.github/workflows/ci.yml) runs both. Details: [Development](#development).
+- **`./prod-check.sh`** builds the [production profile](#production) as a Compose project of its own,
+  `scorewright-prodcheck` on port 8489 (`PROD_CHECK_PORT` changes it), with generated secrets. It checks the health,
+  the app, an unknown API path, the two workers and the refusal of placeholder secrets, and removes it all at the
+  end, even when a check fails.
+- The [CI workflow](.github/workflows/ci.yml) runs all three. Details: [Development](#development).
 
 ## Known limits of the MVP
 
@@ -170,6 +178,8 @@ If your `.env` sets `COMPOSE_PROJECT_NAME`, that name wins: add `-p scorewright-
 - **PHP** runs with `APP_ENV=prod`, `php.ini-production`, and OPcache never checks the files again; there is no bind
   mount and no Vite server.
 - **Headers:** a Content Security Policy on the frontend too, and HSTS when Caddy serves HTTPS.
+- **The health check** calls `/api/health` on a listener of its own, on the container's loopback (`127.0.0.1:2020`),
+  so it works whatever `SERVER_NAME` and `TRUSTED_HOSTS` are; the workers start once it passes.
 
 **The database** has two roles, in both stacks. The owner, `app`, runs the migrations when the `app` container starts.
 The app and the workers connect as `app_runtime`, which may only read and write rows: it is no superuser and owns
@@ -177,8 +187,25 @@ nothing. The `app` container creates it, or updates its password, at each start 
 from before this role works too.
 
 **HTTPS:** the profile serves plain HTTP on `127.0.0.1`. On a server, choose one of these:
-- **Caddy terminates TLS:** set `SERVER_NAME` to the domain name and publish ports 80 and 443. Caddy gets a certificate,
-  redirects HTTP to HTTPS, and sends `Strict-Transport-Security`.
+- **Caddy terminates TLS:** set `SERVER_NAME` to the domain name, and publish ports 80 and 443 on every interface
+  instead of `127.0.0.1:8490`, with a small Compose file next to `compose.prod.yaml`:
+
+  ```yaml
+  # compose.https.yaml
+  services:
+    app:
+      ports: !override
+        - 80:80
+        - 443:443
+        - 443:443/udp
+  ```
+
+  ```bash
+  docker compose -f compose.prod.yaml -f compose.https.yaml up -d --build --wait
+  ```
+
+  Caddy gets a certificate (kept in the `caddy_data` volume), redirects HTTP to HTTPS, and sends
+  `Strict-Transport-Security`. The domain's DNS must point at the server, and ports 80 and 443 must be open.
 - **A proxy in front terminates TLS** and sends the requests to port 80. It must keep the `Host` header, set
   `X-Forwarded-For` and `X-Forwarded-Proto`, and send HSTS itself.
 

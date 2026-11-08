@@ -60,3 +60,19 @@
 		respond `{"type":"/problems/payload-too-large","title":"Payload Too Large","status":413,"code":"payload_too_large"}` 413
 	}
 }
+
+# The container's health check only (compose.prod.yaml): plain HTTP on the loopback, so it needs neither the public
+# host name nor TLS, whatever SERVER_NAME is. It answers /api/health only, which checks PHP and the database too; for
+# these requests, Symfony takes 127.0.0.1 as a trusted host.
+http://127.0.0.1:2020 {
+	bind 127.0.0.1
+	handle /api/health {
+		php_server {
+			root /app/public
+			env SYMFONY_TRUSTED_HOSTS `^127\.0\.0\.1$`
+		}
+	}
+	handle {
+		respond 404
+	}
+}

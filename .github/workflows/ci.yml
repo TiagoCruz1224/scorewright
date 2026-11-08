@@ -29,3 +29,15 @@ jobs:
       # MVP criterion 1 in a browser: an isolated Compose project and Playwright's official image, pinned by digest
       # in compose.e2e.yaml. The same script as on a developer machine.
       - run: ./e2e.sh
+
+  prod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The production profile (compose.prod.yaml) builds and starts with generated secrets, answers, and refuses the
+      # placeholders; the script removes it at the end, also when a check fails. The same script as on a developer
+      # machine.
+      - run: ./prod-check.sh
