@@ -3,10 +3,9 @@
 The notable changes to Scorewright, by version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.1.0 (not yet tagged)
+## 0.1.0 — 2026-11-08
 
-The MVP: everything in [docs/requirements.md](docs/requirements.md) for the first release. It is tagged `v0.1.0` once
-its final QA passes.
+The MVP: everything in [docs/requirements.md](docs/requirements.md) for the first release.
 
 ### Added
 

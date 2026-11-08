@@ -183,7 +183,7 @@ authentication) are grouped as ➖ in one row.
 | 14.2.2 | No unneeded features, samples or docs in production | ✅ | The `prod` image has no dev dependencies, tests or Vite server; `app:demo` and `app:seed-performance` refuse to run in `prod` | `Analytics/DemoCommandTest::testItRefusesToRunOutsideDevAndTest`, `Analytics/SeedPerformanceCommandTest::testItRefusesToRunOutsideDevAndTest`; prod profile |
 | 14.2.3 | Subresource integrity for assets on a CDN | ➖ | No CDN: every asset is served by the app | — |
 | 14.3.2 | Debug modes off in production | ✅ | `APP_ENV=prod` in the image; `display_errors = Off` everywhere | Prod profile (`APP_ENV`, the ini values) |
-| 14.3.3 | No version details in headers | ✅ | Caddy drops `Server`, on its own error responses too (`handle_errors`); `expose_php = Off` | Prod profile (`prod-check.sh`: a missing asset) |
+| 14.3.3 | No version details in headers | ✅ | Caddy drops `Server`, on its own error responses too (`handle_errors`); `expose_php = Off`. **Known exception:** when Caddy serves HTTPS itself, its automatic `308` redirect from `http://` to `https://` (empty body) still carries `Server: FrankenPHP Caddy`, since it is answered before the site's directives. It names no version. | Prod profile (`prod-check.sh`: a missing asset); the `308` seen with `SERVER_NAME=localhost` (SWQ4b) |
 | 14.4.1 | `Content-Type` with a safe character set on every response | ✅ | `application/json` and `application/problem+json` (UTF-8 by definition, RFC 8259), `text/html; charset=utf-8`, `text/csv; charset=utf-8` | Prod profile; the export test |
 | 14.4.2 | API responses carry `Content-Disposition: attachment` | ✅ | `App\Http\NoStoreListener` | `Http/HttpTest::testResponsesAreNeverStored` |
 | 14.4.3 | A Content Security Policy | ✅ | `default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'` on the frontend in production (`Caddyfile.prod`); the API's responses have one too | Prod profile; the e2e test runs the app under Vite, which sends none |
@@ -213,5 +213,5 @@ The ⏳ rows above, in the order they would be done:
   against `http://127.0.0.1:8490`: the headers of `/`, an asset, `/api/*` and Caddy's errors (a missing asset, a
   `POST /`); `/api/unknown` (`404` Problem Details, never `index.html`); a `Host` outside `SYMFONY_TRUSTED_HOSTS`
   (`400` from the API); the session cookie of a login; and `/api/me`, login and health with the database stopped
-  (`503 database_unavailable` with `Retry-After`, in 1 to 2 s). With `SERVER_NAME=localhost` and port 443 published:
+  (`503 database_unavailable` with `Retry-After`, in 2 to 4 s). With `SERVER_NAME=localhost` and port 443 published:
   `http://` redirects to `https://`, and the HTTPS responses, errors included, carry HSTS.

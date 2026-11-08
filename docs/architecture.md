@@ -604,8 +604,8 @@ test of each, and lists what is left for after the MVP. The concrete rules for t
   entrypoint, which keeps the owner's URL from the server it starts. When the database cannot be reached, every
   route answers `503 database_unavailable` with `Retry-After`, the health check included, and soon: connecting gives
   up after 2 s (`PDO::ATTR_TIMEOUT`, for Doctrine and the session handler), and in the production profile the name
-  `db` of a stopped database stops resolving after 1 s (`dns_opt`). A signed-in request with the database stopped
-  answers in about 2 s, login and health in about 1 s.
+  `db` of a stopped database stops resolving after at most 2 s (`dns_opt`, two tries of 1 s). A signed-in request
+  with the database stopped answers in about 4 s, login and health in about 2 s (without `dns_opt`, 7.7 and 3.8 s).
 - **Secrets:** `.env.example` (development) holds placeholders only; the production profile reads `.env.prod`, whose
   example has empty secrets: Compose refuses to start anything until they are set, and the image refuses the
   development placeholders. CI fails if `composer audit` reports a known vulnerability.

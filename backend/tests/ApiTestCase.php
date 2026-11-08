@@ -27,6 +27,7 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Log\DebugLoggerInterface;
 
 /** Requests as the SPA makes them. Each test runs in a transaction that is rolled back (dama/doctrine-test-bundle). */
 abstract class ApiTestCase extends WebTestCase
@@ -37,6 +38,21 @@ abstract class ApiTestCase extends WebTestCase
      * HTTPS, because the session cookie is Secure; the csrf-token header, as the SPA sends it. Login throttling starts
      * from zero, so tests (and quick re-runs) do not throttle each other.
      */
+    /**
+     * What the client's requests logged (the test logger keeps every level), as one text, for "never logged" checks.
+     * Values JSON cannot encode (log contexts hold enums) become null instead of failing the whole encoding, which
+     * would give an empty text that contains nothing. The text must name $route, so it does hold the logs.
+     */
+    protected static function loggedText(KernelBrowser $client, string $route): string
+    {
+        $logger = $client->getContainer()->get('logger');
+        self::assertInstanceOf(DebugLoggerInterface::class, $logger);
+        $text = (string) json_encode($logger->getLogs(), \JSON_PARTIAL_OUTPUT_ON_ERROR | \JSON_INVALID_UTF8_SUBSTITUTE | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+        self::assertStringContainsString('"route":"'.$route.'"', $text, 'The logs of the request are in the text');
+
+        return $text;
+    }
+
     protected static function createApiClient(): KernelBrowser
     {
         $client = static::createClient([], ['HTTPS' => 'on', 'HTTP_CSRF_TOKEN' => str_repeat('t', 32)]);

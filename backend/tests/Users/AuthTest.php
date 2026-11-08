@@ -10,7 +10,6 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpKernel\Log\DebugLoggerInterface;
 use Symfony\Component\Uid\Uuid;
 
 final class AuthTest extends ApiTestCase
@@ -180,10 +179,7 @@ final class AuthTest extends ApiTestCase
         $client->request('GET', '/api/me');
         self::assertResponseIsSuccessful();
 
-        $logger = $client->getContainer()->get('logger');
-        self::assertInstanceOf(DebugLoggerInterface::class, $logger);
-        $logs = (string) json_encode($logger->getLogs());
-        self::assertNotSame([], $logger->getLogs(), 'The requests were logged');
+        $logs = self::loggedText($client, 'auth_login');
         self::assertNotEmpty($sessionId);
         self::assertStringNotContainsString($password, $logs);
         self::assertStringNotContainsString((string) $sessionId, $logs);

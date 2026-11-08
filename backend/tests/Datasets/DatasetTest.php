@@ -13,7 +13,6 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Event\PrePersistEventArgs;
 use Doctrine\ORM\Events;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Component\HttpKernel\Log\DebugLoggerInterface;
 use Symfony\Component\Uid\Uuid;
 
 final class DatasetTest extends ApiTestCase
@@ -292,10 +291,7 @@ final class DatasetTest extends ApiTestCase
 
         self::assertProblem($response, 422, 'import_rejected');
         self::assertStringContainsString('secret-case-key-7f3a', (string) $response->getContent(), 'The excerpt is in the response');
-        $logger = $client->getContainer()->get('logger');
-        self::assertInstanceOf(DebugLoggerInterface::class, $logger);
-        self::assertNotSame([], $logger->getLogs(), 'The request was logged');
-        self::assertStringNotContainsString('secret-case-key-7f3a', (string) json_encode($logger->getLogs()));
+        self::assertStringNotContainsString('secret-case-key-7f3a', self::loggedText($client, 'dataset_create'));
     }
 
     /**

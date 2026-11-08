@@ -18,8 +18,9 @@ x-backend: &backend
       frontend: ./frontend
   restart: unless-stopped
   # When the database is down, its name stops resolving, and Docker's DNS takes about 4 s to say so, for each
-  # connection: 1 s here, so the 503 comes sooner. The app looks up nothing else; Caddy retries its own lookups.
-  dns_opt: ["timeout:1", "attempts:1"]
+  # connection: at most 2 s here (two tries of 1 s, so one lost packet does not fail a lookup, such as Caddy's for
+  # its certificates), and the 503 comes sooner.
+  dns_opt: ["timeout:1", "attempts:2"]
   environment: &backend-env
     APP_SECRET: ${PROD_APP_SECRET:?set PROD_APP_SECRET in .env.prod (README, Production)}
     DATABASE_URL: postgresql://app_runtime:${PROD_APP_DATABASE_PASSWORD:?set PROD_APP_DATABASE_PASSWORD in .env.prod (README, Production)}@db:5432/app?serverVersion=18&charset=utf8
