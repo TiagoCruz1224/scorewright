@@ -1,19 +1,42 @@
 # Weekly update pull requests for the dependencies: Composer (the backend), npm (the frontend and the end-to-end
-# test) and the actions of the CI workflow. Each one runs CI (check.sh and the end-to-end test) before it is merged.
+# test), Playwright's image and the actions of the CI workflow. Each one runs CI (check.sh and the end-to-end test)
+# before it is merged.
 version: 2
+# The end-to-end test's packages and Playwright's official image (compose.e2e.yaml) come in one pull request:
+# @playwright/test only runs with the browsers of the image of the same version.
+multi-ecosystem-groups:
+  playwright:
+    schedule:
+      interval: weekly
 updates:
   - package-ecosystem: composer
     directory: /backend
     schedule:
       interval: weekly
+    # The app stays on Symfony 7.4 LTS: a new major is an upgrade of every component at once, made by hand, not one
+    # package at a time. The patch releases come out for all the components together, so they come in one pull request.
+    ignore:
+      - dependency-name: symfony/*
+        update-types: [version-update:semver-major]
+    groups:
+      symfony:
+        patterns: [symfony/*]
+        update-types: [minor, patch]
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
   - package-ecosystem: npm
     directory: /e2e
-    schedule:
-      interval: weekly
+    patterns: ["*"]
+    multi-ecosystem-group: playwright
+  - package-ecosystem: docker-compose
+    directory: /
+    # Only Playwright's image: the other images of the Compose files follow their major version's tag.
+    allow:
+      - dependency-name: playwright
+    patterns: [playwright]
+    multi-ecosystem-group: playwright
   - package-ecosystem: github-actions
     directory: /
     schedule:
