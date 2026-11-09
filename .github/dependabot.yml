@@ -16,8 +16,9 @@ updates:
     # The app stays on Symfony 7.4 LTS: a new major is an upgrade of every component at once, made by hand, not one
     # package at a time. The patch releases come out for many components on the same day, so they come in one pull
     # request. Dependabot runs Composer without Flex, and this ignore only covers the package a pull request updates:
-    # updating another package can still move a component that the app does not require itself to a new major. CI
-    # fails then (backend/tests/SymfonyVersionsTest.php), and the pull request is closed.
+    # updating another package could still move a component that the app does not require itself to a new major. So
+    # backend/composer.json conflicts with 8.0 for those components, which Composer respects without Flex, and
+    # backend/tests/SymfonyVersionsTest.php fails CI for a component that is missing from that list.
     ignore:
       - dependency-name: symfony/*
         update-types: [version-update:semver-major]

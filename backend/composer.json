@@ -94,7 +94,31 @@
         "check": "Formatting, static analysis, tests and the dependency audit"
     },
     "conflict": {
-        "symfony/symfony": "*"
+        "symfony/cache": ">=8.0",
+        "symfony/clock": ">=8.0",
+        "symfony/config": ">=8.0",
+        "symfony/dependency-injection": ">=8.0",
+        "symfony/doctrine-bridge": ">=8.0",
+        "symfony/dom-crawler": ">=8.0",
+        "symfony/error-handler": ">=8.0",
+        "symfony/event-dispatcher": ">=8.0",
+        "symfony/filesystem": ">=8.0",
+        "symfony/finder": ">=8.0",
+        "symfony/http-foundation": ">=8.0",
+        "symfony/http-kernel": ">=8.0",
+        "symfony/options-resolver": ">=8.0",
+        "symfony/password-hasher": ">=8.0",
+        "symfony/process": ">=8.0",
+        "symfony/routing": ">=8.0",
+        "symfony/security-core": ">=8.0",
+        "symfony/security-csrf": ">=8.0",
+        "symfony/security-http": ">=8.0",
+        "symfony/stopwatch": ">=8.0",
+        "symfony/string": ">=8.0",
+        "symfony/symfony": "*",
+        "symfony/type-info": ">=8.0",
+        "symfony/var-dumper": ">=8.0",
+        "symfony/var-exporter": ">=8.0"
     },
     "extra": {
         "symfony": {

@@ -10,8 +10,10 @@ use PHPUnit\Framework\TestCase;
  * The app stays on one Symfony release line, the one of extra.symfony.require in composer.json (7.4 LTS). Flex keeps
  * the components on it when a developer runs composer update, but Dependabot runs Composer without Flex: updating
  * PHP-CS-Fixer once moved symfony/finder and five other components that the app does not require itself to 8.1, next
- * to a framework on 7.4. This test reads composer.lock, so it fails then, wherever the change came from. The
- * polyfills, the contracts and Flex have versions of their own; every other Symfony package must be on the line.
+ * to a framework on 7.4. Since then, composer.json conflicts with 8.0 for each component that the app does not require
+ * itself, which Composer respects without Flex. This test reads composer.lock, so it fails for a component that is
+ * missing from that list, wherever the change came from. The polyfills, the contracts and Flex have versions of their
+ * own; every other Symfony package must be on the line.
  */
 final class SymfonyVersionsTest extends TestCase
 {
@@ -23,7 +25,7 @@ final class SymfonyVersionsTest extends TestCase
         self::assertSame(
             [],
             self::outsideTheLine([...$lock['packages'], ...$lock['packages-dev']], $line),
-            "Every Symfony component must be on $line (extra.symfony.require): composer update them, with Flex",
+            "Every Symfony component must be on $line (extra.symfony.require): composer update them, with Flex, and add a component that the app does not require itself to conflict in composer.json",
         );
     }
 
