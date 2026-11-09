@@ -46,7 +46,7 @@ guidance that says how to choose. The app scores the automatic checks, such as a
 criterion has a weight, for the overall score. Once an evaluation uses a rubric, it is locked.
 
 **Evaluation.** An evaluation applies a rubric to one to five runs of the same version. Each run gets a letter: A, B,
-C…. People score every answer, and the automatic checks run in the background. When the owner closes it, its scores
+C and so on. People score every answer, and the automatic checks run in the background. When the owner closes it, its scores
 never change again.
 
 **Blind mode and roles.** In blind mode, the people who score do not see which run wrote an answer, and the answers of
@@ -186,7 +186,7 @@ In **Evaluations**, choose **New evaluation**:
 - **Blind mode:** keep it on (it is on by default).
 
 The form warns that `tuned-v2` does not answer every case: for those 4 cases, the one answer can only be the
-baseline's. The foot of the form says what is to do: "96 answers to score · 2 manual criteria · 3 automatic".
+baseline's. The foot of the form says how much there is to do: "96 answers to score · 2 manual criteria · 3 automatic".
 
 ![New evaluation: the name Baseline vs tuned, the version Support cases v1, both runs ticked with their letters A and B, the rubric, Blind mode on with the warning about tuned-v2, and "96 answers to score · 2 manual criteria · 3 automatic"](guide/new-evaluation.png)
 
@@ -212,7 +212,7 @@ Scoring goes faster, and is fairer, with more than one person. In **Members**, u
 - **Role:** **Evaluator**.
 
 Choose **Invite**: "Demo Evaluator was added as an evaluator." Only people who already have an account can be added:
-they choose **Register** first. There is no e-mail.
+they choose **Register** first. Scorewright sends no e-mail.
 
 To see what the evaluator sees, sign in as `demo.evaluator@example.com` in a private window. The project's
 **Overview** lists the evaluation under **Your evaluations**, with **Start scoring** or **Continue scoring**. Its
@@ -340,8 +340,8 @@ The columns are in [docs/api.md](api.md#export).
 
 ## The answer
 
-Yes: `tuned-v2` is better. It is kinder on every tag, it keeps the rules on 98% of the cases where the baseline keeps
-them on 76%, and its answers are still short.
+Yes: `tuned-v2` is better. It is kinder on every tag. On the 46 cases both runs answered, it keeps the rules 98% of
+the time, against 76% for the baseline. And its answers are still short.
 
 It is not better everywhere. On `product-4`, it makes up a restock date. That is the next prompt change, and the next
 evaluation: import its answers as a new run of the same dataset version, such as `tuned-v3`, and score it with the
