@@ -12,6 +12,15 @@ and the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   use Scorewright for your own system. `./e2e.sh screenshots` makes its screenshots again by following its steps
   through the UI.
 
+### Fixed
+
+- **A success message no longer comes before the data it is about** (SWQ5-01): after an invite, a role change or a
+  removal (Members), closing an evaluation or running its checks again, or saving, archiving or restoring a project
+  (Settings), the message waits until the page has read the data again, so it never sits next to the old list or
+  state. React Router gives the action's answer before the reload ends: about 3 s on the development stack.
+- **The Compare page says how the largest disagreements are ordered** (SWQ5-05): the largest gaps first, a pass
+  against a fail counting as much as 1 against 5, and ties by case order.
+
 ## 0.1.0 — 2026-11-08
 
 The MVP: everything in [docs/requirements.md](docs/requirements.md) for the first release.

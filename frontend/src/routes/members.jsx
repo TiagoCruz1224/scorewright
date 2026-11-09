@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { flushSync } from 'react-dom';
-import { Form, redirect, useActionData, useLoaderData, useRouteLoaderData } from 'react-router';
+import { Form, redirect, useActionData, useLoaderData, useNavigation, useRouteLoaderData } from 'react-router';
 import { api } from '../api/client.js';
 import { attempt, ErrorSummary, Field, StatusMessage } from '../components/forms.jsx';
 import { Icon } from '../components/icons.jsx';
@@ -55,6 +55,8 @@ export function Members() {
   const project = useRouteLoaderData('project');
   const { user } = useRouteLoaderData('root');
   const result = useActionData();
+  // React Router publishes the action's answer before the list is read again: say it once the list shows it (SWQ5-01).
+  const idle = useNavigation().state === 'idle';
   const canManage = project.role === 'owner' && !project.archivedAt;
   const owners = list.items.filter((member) => member.role === 'owner').length;
   const counted = (number, word) => `${number} ${word}${number === 1 ? '' : 's'}`;
@@ -71,7 +73,7 @@ export function Members() {
           </p>
         </div>
       </div>
-      <StatusMessage message={result?.ok} />
+      <StatusMessage message={idle ? result?.ok : undefined} />
       {canManage && <InviteForm key={result?.intent === 'invite' && result.ok ? result.at : 'invite'} result={result?.intent === 'invite' ? result : null} />}
 
       <section className="section">

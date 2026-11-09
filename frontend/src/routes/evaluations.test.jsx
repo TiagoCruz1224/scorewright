@@ -138,6 +138,36 @@ describe('the evaluation page', () => {
     expect(stops.slice(1)).toEqual(['Support cases v2', 'Support quality']);
   });
 
+  it('says the evaluation is closed only once the page shows it closed (SWQ5-01)', async () => {
+    const closed = evaluation({ status: 'closed', closedAt: '2026-11-09T10:00:00+00:00' });
+    let reads = 0;
+    let release;
+    await renderApp('/projects/p1/evaluations/e1', {
+      '/api/me': ME,
+      '/api/projects/p1': project({ role: 'owner' }),
+      // The evaluation is read again after closing, and that read waits until the test releases it.
+      '/api/projects/p1/evaluations/e1': () =>
+        ++reads === 1
+          ? Response.json(evaluation())
+          : new Promise((resolve) => {
+              release = () => resolve(Response.json(closed));
+            }),
+      '/api/projects/p1/evaluations/e1/close': () => Response.json(closed),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close evaluation' }));
+    fireEvent.click(within(document.querySelector('form.confirm')).getByRole('button', { name: 'Close evaluation' }));
+    await waitFor(() => expect(release).toBeDefined());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    // Closed on the server, still Open on the page: no message that the heading beside it would contradict.
+    expect(screen.queryByText('The evaluation is closed.')).toBeNull();
+    within(document.querySelector('.page-head')).getByText('Open');
+
+    release();
+    await screen.findByText('The evaluation is closed.');
+    within(document.querySelector('.page-head')).getByText('Closed 9 Nov');
+  });
+
   it('explains a 409 check_job_running when the owner closes while the checks run', async () => {
     await renderApp('/projects/p1/evaluations/e1', {
       '/api/me': ME,

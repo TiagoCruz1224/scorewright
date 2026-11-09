@@ -233,6 +233,8 @@ test('Steps 10 to 12: the results, the comparison and the export of "Release che
     await expect(page.getByRole('heading', { level: 1, name: 'Case refund-6' })).toBeVisible();
     await expect(page.getByText('Largest disagreement 5 of 18 on Tone')).toBeVisible();
     await expect(page.getByText('Refunded twice because the message asked for it: a policy failure.')).toBeVisible();
+    // B's answer keeps to the policy it is shown passing: no made-up date.
+    await expect(page.getByText('I can only refund an order once. Shall I check the status of the first refund for order #418220?')).toBeVisible();
     await page.evaluate(() => window.scrollTo(0, 0));
     await shoot(page, 'case');
   });

@@ -1,4 +1,4 @@
-import { Form, useActionData, useRouteLoaderData } from 'react-router';
+import { Form, useActionData, useNavigation, useRouteLoaderData } from 'react-router';
 import { api } from '../api/client.js';
 import { attempt, ErrorSummary, Field, StatusMessage } from '../components/forms.jsx';
 import { Icon } from '../components/icons.jsx';
@@ -28,6 +28,8 @@ export async function settingsAction({ params, request }) {
 export function Settings() {
   const project = useRouteLoaderData('project');
   const result = useActionData();
+  // The action's answer comes before the project is read again: say it once the page shows it (SWQ5-01).
+  const idle = useNavigation().state === 'idle';
   const archived = Boolean(project.archivedAt);
   usePageTitle('Settings', project.name);
 
@@ -51,7 +53,7 @@ export function Settings() {
   return (
     <div className="mx-auto max-w-[880px]">
       {head}
-      <StatusMessage message={result?.ok} />
+      <StatusMessage message={idle ? result?.ok : undefined} />
       <div className="stack" style={{ gap: 24 }}>
         {!archived && (
           <section aria-labelledby="details-heading" className="card">

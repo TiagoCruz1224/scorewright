@@ -401,7 +401,7 @@ function Disagreements({ project, evaluation, comparison }) {
           Largest disagreements
         </h2>
         <p className="section-hint">
-          Where {a} and {b} got the most different scores for a case: a pass against a fail first, then each point apart on 1 to 5. Ties go by case order.
+          Where {a} and {b} got the most different scores for a case, the largest gaps first: a pass against a fail counts as much as 1 against 5. Ties go by case order.
         </p>
       </div>
       {disagreements.length === 0 ? (

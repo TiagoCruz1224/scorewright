@@ -4,7 +4,7 @@
   {"id": "refund-3", "output": "A refund reaches your card 5 to 10 working days after we receive the return."},
   {"id": "refund-4", "output": "Gift cards cannot be refunded, I'm afraid, but they never expire, so you can use yours whenever you like."},
   {"id": "refund-5", "output": "Sorry for the wait. I've checked the return of order #418133: it arrived on Monday, and the refund goes out tomorrow."},
-  {"id": "refund-6", "output": "I understand the frustration, but I can only refund an order once. The refund for order #418220 was approved on 2 November; shall I check where it is?"},
+  {"id": "refund-6", "output": "I understand the frustration, but I can only refund an order once. Shall I check the status of the first refund for order #418220?"},
   {"id": "billing-1", "output": "The 4.99 is our delivery fee for orders under 50. If you think it is wrong, tell me the order number and I'll check it."},
   {"id": "billing-2", "output": "Yes: choose bank transfer at checkout. Your order ships as soon as the payment arrives."},
   {"id": "billing-3", "output": "Add the VAT number in Account > Invoices, and a new invoice for order #418412 is made straight away."},

@@ -22,11 +22,13 @@ You will:
 4. read the results and the comparison of "Release check", the same evaluation with all 96 answers scored;
 5. export the scores as a CSV file.
 
-**How long it takes:** about 30 minutes, once the stack runs. Scoring all 96 answers would take most of an hour more,
-so you score six to learn how, and read the rest.
+**How long it takes:** about 30 to 45 minutes, once the stack runs. Scoring all 96 answers would take most of an hour
+more, so you score six to learn how, and read the rest.
 
 **Before you start:**
 - Follow the [Quick start](../README.md#quick-start): the stack runs, and `app:demo` has loaded the demo data.
+  On this development stack, especially with Docker Desktop on Windows or macOS, each page takes a second or two; the
+  [production profile](../README.md#production) is much faster.
 - Open http://localhost:5471 and sign in as `demo.owner@example.com`, with the password `scorewright-demo`. You use
   the demo owner so that you can open the demo project at the end. The project you build is a new one, next to it.
 - The files are in [backend/demo](../backend/demo), in your clone of the repository: `cases.csv`,
@@ -202,22 +204,26 @@ the page updates every few seconds. On the development stack they take a few sec
 - **Automatic checks** says "96 of 96 · done" and "Every answer is checked." Each check gives every answer a Pass or a
   Fail, or "not checked" when it cannot run.
 - **Progress by criterion** shows what is left: the manual criteria at 0 / 96.
-- You can score while the checks run. If the workers stop, the page says the checks have stalled; **Run checks again**
-  starts them again.
+- You can score while the checks run.
+- If a worker stops half-way, after two minutes the page says the checks have stalled, and **Run checks again** starts
+  them again. If they stay "queued", no worker is running: `docker compose ps` shows it.
 
 ### 7. Invite an evaluator (optional)
 
-Scoring goes faster, and is fairer, with more than one person. In **Members**, under **Invite a member**:
+More people make scoring faster, if they split the cases between them. Each answer has one score per criterion,
+shared by the project: a second person sees the first one's scores, and can change them. In **Members**, under
+**Invite a member**:
 - **Email:** `demo.evaluator@example.com`;
 - **Role:** **Evaluator**.
 
 Choose **Invite**: "Demo Evaluator was added as an evaluator." Only people who already have an account can be added:
 they choose **Register** first. Scorewright sends no e-mail.
 
-To see what the evaluator sees, sign in as `demo.evaluator@example.com` in a private window. The project's
-**Overview** lists the evaluation under **Your evaluations**, with **Start scoring** or **Continue scoring**. Its
-results are locked: "Results unlock when the owner closes this evaluation". Two people can score the same answer, and
-the last save wins: agree beforehand on who scores what.
+To see what the evaluator sees, sign in as `demo.evaluator@example.com` in a private window; the password is the
+same, `scorewright-demo`. The project's **Overview** lists the evaluation under **Your evaluations**, with **Start
+scoring** or **Continue scoring**. The evaluation's **Results** and **Compare** are locked: "Results unlock when the
+owner closes this evaluation". When two people score the same answer, the last save wins: agree beforehand on who
+scores which cases.
 
 ### 8. Score with the keyboard
 
@@ -304,12 +310,12 @@ than two runs, you can compare any two.
 - **By criterion** gives B − A for every criterion, and **Tone by tag** the same per tag.
 
 **The largest disagreements** are where to read the answers. They are the cases where A and B got the most different
-scores: a pass against a fail first, then each point apart on the 1–5 scale.
+scores, the largest gaps first: a pass against a fail counts as much as 1 against 5, and ties go by case order.
 
 ![Largest disagreements: rows with the case, the criterion, the input, A's score, B's score and B − A. Most are the order number and the policy, where B passes and A fails; refund-3 and product-4 go the other way](guide/disagreements.png)
 
-- The list has at most 20 rows, a case and a criterion each. Here, most are the order number, which B mentions, and
-  the policy, which A broke.
+- The list has at most 20 rows, a case and a criterion each. Here, `refund-6` and `injection-6` have two rows each,
+  so the 20 rows are 18 cases. Most are the order number, which B mentions, and the policy, which A broke.
 - **Two go the other way,** and they are the ones to read:
   - `refund-3`, where A copied the reference word for word and B, correct, worded it otherwise: a limit of the exact
     match;
@@ -361,7 +367,7 @@ same rubric, so the numbers stay comparable.
    import csv
 
    def answer(text):
-       ...  # call your model or assistant with this prompt, and return its answer as a string
+       raise NotImplementedError("call your model here and return its answer")
 
    with open('cases.csv', newline='', encoding='utf-8') as cases, open('run-tuned-v3.csv', 'w', newline='', encoding='utf-8') as run:
        writer = csv.writer(run)

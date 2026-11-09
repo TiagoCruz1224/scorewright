@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { evaluation, ME, page, project, renderApp } from '../test-utils.jsx';
@@ -41,6 +41,39 @@ describe('the start page', () => {
     expect(screen.getByText(/To look around first, load the demo data/).textContent).toBe(
       'To look around first, load the demo data with docker compose exec app php bin/console app:demo, then sign in as demo.owner@example.com.',
     );
+  });
+});
+
+describe('members', () => {
+  it('says a member was added only once the list shows them (SWQ5-01)', async () => {
+    const [ana] = members.items;
+    const bo = { userId: 'u2', email: 'bo@example.com', displayName: 'Bo', role: 'viewer' };
+    let reads = 0;
+    let release;
+    await renderApp('/projects/p1/members', {
+      '/api/me': ME,
+      '/api/projects/p1': project({ role: 'owner' }),
+      // The list is read again after the invite, and that read waits until the test releases it.
+      '/api/projects/p1/members?page=1': () =>
+        ++reads === 1
+          ? Response.json(page([ana]))
+          : new Promise((resolve) => {
+              release = () => resolve(Response.json(page([ana, bo])));
+            }),
+      '/api/projects/p1/members': () => Response.json(bo, { status: 201 }),
+    });
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: bo.email } });
+    fireEvent.click(screen.getByRole('button', { name: 'Invite' }));
+    await waitFor(() => expect(release).toBeDefined());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    // The invite is done, the list is not read yet: no message that the list beside it would contradict.
+    expect(screen.queryByText('Bo was added as a viewer.')).toBeNull();
+    screen.getByRole('heading', { name: '1 member' });
+
+    release();
+    await screen.findByText('Bo was added as a viewer.');
+    screen.getByRole('heading', { name: '2 members' });
   });
 });
 

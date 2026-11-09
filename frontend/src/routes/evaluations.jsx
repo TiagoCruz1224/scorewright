@@ -540,6 +540,8 @@ export function Evaluation() {
   const { evaluation, created } = useLoaderData();
   const project = useRouteLoaderData('project');
   const result = useActionData();
+  // The action's answer comes before the evaluation is read again: say it once the page shows it (SWQ5-01).
+  const idle = useNavigation().state === 'idle';
   usePageTitle(evaluation.name, project.name);
   usePollWhileChecking(evaluation);
 
@@ -561,7 +563,7 @@ export function Evaluation() {
           </div>
         }
       />
-      <StatusMessage message={result?.done ?? (created ? 'The evaluation started.' : undefined)} />
+      <StatusMessage message={idle ? (result?.done ?? (created ? 'The evaluation started.' : undefined)) : undefined} />
 
       <div className="stats">
         <div className="stat">
