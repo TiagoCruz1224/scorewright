@@ -22,6 +22,8 @@ and the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   longer reset to the old values during the reload, and **Invite** and **Change role** wait for it.
 - **The Compare page says how the largest disagreements are ordered** (SWQ5-05): the largest gaps first, a pass
   against a fail counting as much as 1 against 5, and ties by case order.
+- **A new evaluation gives A to the run imported first, also when two runs were imported in the same second:** the
+  form ordered the runs by their time, which has whole seconds, so the newer run could come first and get A.
 
 ## 0.1.0 — 2026-11-08
 

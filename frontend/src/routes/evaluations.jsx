@@ -255,7 +255,10 @@ export function NewEvaluation() {
   usePageTitle('New evaluation', project.name);
 
   // Oldest first, as they were imported: a baseline usually comes before what it is compared with, and gets A.
-  const versionRuns = runs.filter((run) => run.datasetVersion.id === versionId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  // createdAt has whole seconds: two runs of the same second go by id, a UUID v7, which grows with time.
+  const versionRuns = runs
+    .filter((run) => run.datasetVersion.id === versionId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || (a.id < b.id ? -1 : 1));
   const picked = versionRuns.filter((run) => chosen.has(run.id));
   const letterOf = (run) => 'ABCDE'[picked.indexOf(run)];
   const rubric = rubrics.find((item) => item.id === rubricId);

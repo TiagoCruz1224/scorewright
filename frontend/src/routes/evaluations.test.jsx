@@ -82,6 +82,20 @@ describe('new evaluation', () => {
     expect(screen.getByRole('checkbox', { name: /baseline-v1/ }).getAttribute('aria-invalid')).toBeNull();
   });
 
+  it('gives A to the run imported first, also when both runs were imported in the same second', async () => {
+    // As the API answers: newest first, by createdAt (whole seconds) and then by id (UUID v7, which grows with time).
+    const second = '2026-11-05T10:00:00+00:00';
+    const answers = newEvaluationAnswers(() => Response.json({}));
+    answers['/api/projects/p1/runs?perPage=100'] = page([
+      run('019a5a2e-7c19-7000-8000-000000000002', 'tuned-v2', second),
+      run('019a5a2e-7a33-7000-8000-000000000001', 'baseline-v1', second),
+    ]);
+    await renderApp('/projects/p1/evaluations/new', answers);
+
+    const boxes = within(screen.getByRole('group', { name: 'Runs' })).getAllByRole('checkbox');
+    expect(boxes.map((box) => box.closest('label').querySelector('b').textContent)).toEqual(['baseline-v1', 'tuned-v2']);
+  });
+
   it('has no accessibility violations (axe)', async () => {
     await renderApp('/projects/p1/evaluations/new', newEvaluationAnswers(() => Response.json({})));
     fireEvent.click(screen.getAllByRole('checkbox')[0]);
