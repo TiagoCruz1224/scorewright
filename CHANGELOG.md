@@ -24,6 +24,10 @@ and the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   against a fail counting as much as 1 against 5, and ties by case order.
 - **A new evaluation gives A to the run imported first, also when two runs were imported in the same second:** the
   form ordered the runs by their time, which has whole seconds, so the newer run could come first and get A.
+- **Every Symfony component is on 7.4 LTS again:** an update of PHP-CS-Fixer had moved six components that the app
+  does not require itself (filesystem, finder, options-resolver, process, stopwatch and string) to 8.1, next to a
+  framework on 7.4. A test now fails when a Symfony component in `composer.lock` is not on the line of
+  `extra.symfony.require`.
 
 ## 0.1.0 — 2026-11-08
 
