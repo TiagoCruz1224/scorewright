@@ -4,7 +4,8 @@
 # when a test fails. Used locally (from Git Bash on Windows) and by the CI workflow; ./check.sh does not run it.
 #
 # ./e2e.sh             the tests (e2e/tests)
-# ./e2e.sh screenshots the README's screenshots, made again from the demo data into docs/screenshots
+# ./e2e.sh screenshots the README's and the guide's screenshots, made again from the demo data into docs/screenshots
+#                      and docs/guide
 set -eu
 
 project=chromium

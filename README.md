@@ -7,6 +7,9 @@ automatic checks. Then you compare the runs on the same data, case by case.
 It is for small teams that change a prompt or a model and need to know, with evidence rather than impressions,
 whether the new version is better, and where it is worse.
 
+**New to it? Read the [guide](docs/guide.md):** a worked example, step by step, from an empty project to the
+comparison of two prompts, with the demo data, and how to use Scorewright for your own system.
+
 | Scoring an answer, blind | Results of a closed evaluation |
 |---|---|
 | ![The scoring screen in blind mode: the case, the reference answer, the answer with its run hidden, and the criteria to score with the keyboard](docs/screenshots/scoring-blind.png) | ![Results: the overall score and each criterion per run, with bars, and how often each score was given](docs/screenshots/results.png) |
@@ -73,7 +76,8 @@ after a prompt change. Every case and answer is made up.
   and choose Continue scoring.
 
 The demo's files, in [backend/demo](backend/demo), are also examples of the import format
-([docs/api.md](docs/api.md#import-format)). Running `app:demo` again changes nothing. To start again from nothing:
+([docs/api.md](docs/api.md#import-format)), and [the guide](docs/guide.md) builds the demo project again from them,
+step by step. Running `app:demo` again changes nothing. To start again from nothing:
 `docker compose down -v`, then the three commands above. To stop the stack and keep its data: `docker compose down`.
 
 ## Architecture
@@ -359,8 +363,9 @@ On Windows, run it from Git Bash. The CI workflow runs the same script. To fix t
 - the demo owner opens the results and the comparison of the demo's closed evaluation;
 - axe-core checks six pages on the way: Projects, Dataset, Rubric editor, Scoring and Compare, twice.
 
-`./e2e.sh screenshots` makes the README's screenshots again, from the demo data, into
-[docs/screenshots](docs/screenshots).
+`./e2e.sh screenshots` makes the screenshots again, from the demo data: the README's, into
+[docs/screenshots](docs/screenshots), and the guide's, into [docs/guide](docs/guide). The guide's follow its steps
+through the UI, from an empty project, so they also check that the steps still work.
 
 **How it runs:**
 - the script starts its own Compose project, `scorewright-e2e`, on ports 8481 and 5481 (`E2E_APP_PORT` and

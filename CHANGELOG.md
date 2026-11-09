@@ -3,6 +3,15 @@
 The notable changes to Scorewright, by version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- **The guide** ([docs/guide.md](docs/guide.md)): a worked example, from an empty project to the comparison of two
+  prompts and the export, built from the demo's files, with the concepts, why each criterion of the rubric, and how to
+  use Scorewright for your own system. `./e2e.sh screenshots` makes its screenshots again by following its steps
+  through the UI.
+
 ## 0.1.0 — 2026-11-08
 
 The MVP: everything in [docs/requirements.md](docs/requirements.md) for the first release.

@@ -17,7 +17,7 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', testDir: './tests', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 } } },
-    // The README's screenshots, from the demo data: ./e2e.sh screenshots.
+    // The README's and the guide's screenshots, from the demo data: ./e2e.sh screenshots.
     { name: 'screenshots', testDir: './screenshots', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 860 } } },
   ],
 });
