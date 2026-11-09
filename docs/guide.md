@@ -206,7 +206,8 @@ the page updates every few seconds. On the development stack they take a few sec
 - **Progress by criterion** shows what is left: the manual criteria at 0 / 96.
 - You can score while the checks run.
 - If a worker stops half-way, after two minutes the page says the checks have stalled, and **Run checks again** starts
-  them again. If they stay "queued", no worker is running: `docker compose ps` shows it.
+  them again. If they stay "queued", no worker is running: `docker compose ps` then lists no `worker`, and
+  `docker compose up -d` starts the workers again.
 
 ### 7. Invite an evaluator (optional)
 

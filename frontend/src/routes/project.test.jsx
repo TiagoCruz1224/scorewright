@@ -67,13 +67,51 @@ describe('members', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Invite' }));
     await waitFor(() => expect(release).toBeDefined());
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
-    // The invite is done, the list is not read yet: no message that the list beside it would contradict.
+    // The invite is done, the list is not read yet: no message that the list beside it would contradict, and the form
+    // keeps the email, its button waiting (SWQ5-09).
     expect(screen.queryByText('Bo was added as a viewer.')).toBeNull();
     screen.getByRole('heading', { name: '1 member' });
+    expect(screen.getByLabelText('Email').value).toBe(bo.email);
+    expect(screen.getByRole('button', { name: 'Invite' }).disabled).toBe(true);
 
     release();
     await screen.findByText('Bo was added as a viewer.');
     screen.getByRole('heading', { name: '2 members' });
+    expect(screen.getByLabelText('Email').value).toBe('');
+    expect(screen.getByRole('button', { name: 'Invite' }).disabled).toBe(false);
+  });
+
+  it('keeps the chosen role until the list shows it (SWQ5-09)', async () => {
+    const [ana] = members.items;
+    const bo = { userId: 'u2', email: 'bo@example.com', displayName: 'Bo', role: 'evaluator' };
+    let reads = 0;
+    let release;
+    await renderApp('/projects/p1/members', {
+      '/api/me': ME,
+      '/api/projects/p1': project({ role: 'owner' }),
+      // The list is read again after the change, and that read waits until the test releases it.
+      '/api/projects/p1/members?page=1': () =>
+        ++reads === 1
+          ? Response.json(page([ana, bo]))
+          : new Promise((resolve) => {
+              release = () => resolve(Response.json(page([ana, { ...bo, role: 'viewer' }])));
+            }),
+      '/api/projects/p1/members/u2': () => Response.json({ ...bo, role: 'viewer' }),
+    });
+
+    fireEvent.change(screen.getByLabelText('Role of Bo'), { target: { value: 'viewer' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Change role of Bo' }));
+    await waitFor(() => expect(release).toBeDefined());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    // Saved, but the list is not read yet: the select keeps Viewer, not the role the list still has.
+    expect(screen.getByLabelText('Role of Bo').value).toBe('viewer');
+    expect(screen.getByRole('button', { name: 'Change role of Bo' }).disabled).toBe(true);
+    expect(screen.queryByText('Bo is now a viewer.')).toBeNull();
+
+    release();
+    await screen.findByText('Bo is now a viewer.');
+    expect(screen.getByLabelText('Role of Bo').value).toBe('viewer');
+    expect(screen.getByRole('button', { name: 'Change role of Bo' }).disabled).toBe(false);
   });
 });
 

@@ -18,6 +18,8 @@ and the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   removal (Members), closing an evaluation or running its checks again, or saving, archiving or restoring a project
   (Settings), the message waits until the page has read the data again, so it never sits next to the old list or
   state. React Router gives the action's answer before the reload ends: about 3 s on the development stack.
+- **Members keeps what was typed until the list is read again** (SWQ5-09): the invite's email and a changed role no
+  longer reset to the old values during the reload, and **Invite** and **Change role** wait for it.
 - **The Compare page says how the largest disagreements are ordered** (SWQ5-05): the largest gaps first, a pass
   against a fail counting as much as 1 against 5, and ties by case order.
 

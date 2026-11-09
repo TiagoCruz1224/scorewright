@@ -55,7 +55,8 @@ export function Members() {
   const project = useRouteLoaderData('project');
   const { user } = useRouteLoaderData('root');
   const result = useActionData();
-  // React Router publishes the action's answer before the list is read again: say it once the list shows it (SWQ5-01).
+  // React Router publishes the action's answer before the list is read again: say it, and reset the forms it is about,
+  // once the list shows it (SWQ5-01, SWQ5-09). Until then the forms keep what was typed, and their buttons wait.
   const idle = useNavigation().state === 'idle';
   const canManage = project.role === 'owner' && !project.archivedAt;
   const owners = list.items.filter((member) => member.role === 'owner').length;
@@ -74,7 +75,7 @@ export function Members() {
         </div>
       </div>
       <StatusMessage message={idle ? result?.ok : undefined} />
-      {canManage && <InviteForm key={result?.intent === 'invite' && result.ok ? result.at : 'invite'} result={result?.intent === 'invite' ? result : null} />}
+      {canManage && <InviteForm key={idle && result?.intent === 'invite' && result.ok ? result.at : 'invite'} result={result?.intent === 'invite' ? result : null} busy={!idle} />}
 
       <section className="section">
         <div className="section-head">
@@ -98,11 +99,12 @@ export function Members() {
             <tbody>
               {list.items.map((member) => (
                 <MemberRow
-                  key={`${member.userId}-${member.role}-${result?.userId === member.userId ? result.at : ''}`}
+                  key={`${member.userId}-${member.role}-${idle && result?.userId === member.userId ? result.at : ''}`}
                   member={member}
                   isSelf={member.userId === user.id}
                   canManage={canManage}
                   result={result?.userId === member.userId ? result : null}
+                  busy={!idle}
                 />
               ))}
             </tbody>
@@ -115,7 +117,7 @@ export function Members() {
   );
 }
 
-function InviteForm({ result }) {
+function InviteForm({ result, busy }) {
   return (
     <section aria-labelledby="invite-heading" className="card">
       <div className="card-head">
@@ -142,7 +144,7 @@ function InviteForm({ result }) {
             <RoleOptions />
           </Field>
           {/* Level with the inputs, below their labels, only while the three fit on one line (280 + 180 + 88 px and the gaps). */}
-          <button type="submit" className="btn btn-primary @min-[36rem]:mt-[26px]">
+          <button type="submit" className="btn btn-primary @min-[36rem]:mt-[26px]" disabled={busy}>
             <Icon name="mail" />
             Invite
           </button>
@@ -154,9 +156,9 @@ function InviteForm({ result }) {
 
 /**
  * One member: who, the role (to change, for an owner) and Remove, which asks on the page first. Keyed by the last
- * answer, so it resets.
+ * answer once the list is read again, so it resets with the new data.
  */
-function MemberRow({ member, isSelf, canManage, result }) {
+function MemberRow({ member, isSelf, canManage, result, busy }) {
   const [confirming, setConfirming] = useState(false);
   const idPrefix = `member-${member.userId}`;
   const roleErrors = (result?.problem?.errors ?? []).filter((error) => error.field === 'role');
@@ -205,7 +207,7 @@ function MemberRow({ member, isSelf, canManage, result }) {
               >
                 <RoleOptions />
               </select>
-              <button type="submit" className="btn btn-sm">
+              <button type="submit" className="btn btn-sm" disabled={busy}>
                 Change role{' '}<span className="sr-only">of {member.displayName}</span>
               </button>
             </Form>
